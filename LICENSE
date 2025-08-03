@@ -1,0 +1,19 @@
+Business Source License 1.1
+
+TERMS
+
+The Licensor hereby grants you the right to copy, modify, create derivative works, redistribute, and make non-production use of the Licensed Work. The Licensor may grant you additional rights in the Additional Use Grant, found at the end of this license.
+
+You may not use the Licensed Work for a Production Use, except as specified in the Additional Use Grant.
+
+This license will continue in effect until the Change Date. On the Change Date, the Licensed Work will be released under the Change License.
+
+--------------------------------------------------------------------------------
+
+Licensed Work: AxonMQ
+Licensor: le.toille <le7.toille@gmail.com>
+Change License: Apache License, Version 2.0
+Change Date: 2030-09-28
+
+Additional Use Grant:
+You may make Production Use of the Licensed Work, provided that such use does not include offering the Licensed Work to third parties on a hosted or embedded basis as a commercial product or service whose primary purpose is to provide the functionality of the Licensed Work.

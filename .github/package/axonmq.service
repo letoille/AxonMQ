@@ -1,0 +1,17 @@
+[Unit]
+Description=AxonMQ MQTT Broker
+Documentation=https://github.com/letoille/AxonMQ
+After=network.target
+
+[Service]
+User=axonmq
+Group=axonmq
+ExecStart=/usr/bin/axonmq --config /etc/axonmq/config.toml
+WorkingDirectory=/var/lib/axonmq
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

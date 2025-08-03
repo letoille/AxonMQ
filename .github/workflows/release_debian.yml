@@ -1,0 +1,50 @@
+name: axonmq debian
+
+on: workflow_dispatch
+
+env:
+  VERSION: 0.1.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: [10, 11, 12]
+    container: ghcr.io/axonmq/build-debian${{ matrix.version }}:${{ github.ref_name }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: rustup default stable
+    #- run: rustup target add aarch64-unknown-linux-gnu
+    - uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "linux-debian${{ matrix.version }}"
+        shared-key: ""
+        key: ""
+        env-vars: ""
+        workspaces: ""
+        cache-directories: ""
+        cache-targets: ""
+        cache-on-failure: "true"
+        cache-all-crates: ""
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        cache-provider: "buildjet"
+    - name: Build
+      run: |
+        cargo build --release
+        cargo generate-rpm -p axonmq
+        ls -l target/generate-rpm/
+        ldd --version
+
+    - name: package
+      run: |
+        python3 .github/package/create_deb.py -v ${{ env.VERSION }} -a amd64
+
+    - name: upload amd64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: debian-${{ matrix.version }}-amd64-axonmq
+        path: |
+          axonmq-${{ env.VERSION }}-amd64.deb
+          target/generate-rpm/axonmq-${{ env.VERSION }}-1.x86_64.rpm
