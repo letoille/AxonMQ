@@ -2,7 +2,7 @@ use coarsetime;
 use futures_util::{SinkExt, stream::StreamExt as _};
 use tokio::{net::TcpListener, sync::mpsc, time};
 use tokio_util::codec::Framed;
-use tracing::{Instrument, debug, info};
+use tracing::{Instrument, debug};
 
 use crate::CONFIG;
 use crate::operator::{helper::Helper, out::mqtt::MqttOutSender};
@@ -289,7 +289,6 @@ impl Stack {
                     }
                     return Ok(());
                 } else {
-                    info!(parent: &span, "first message not CONNECT, closing");
                     async_client.framed.close().await.ok();
                     return Err(());
                 }
@@ -297,7 +296,6 @@ impl Stack {
             .await;
 
             if result.is_err() || result.unwrap().is_err() {
-                info!(parent: &span, "client did not send CONNECT in time");
                 async_client.framed.close().await.ok();
                 return;
             }
