@@ -108,7 +108,7 @@ impl Publish {
         let mut topic = vec![0u8; topic_len as usize];
         rdr.read_exact(&mut topic)?;
 
-        let topic = String::from_utf8(topic).map_err(|_| MqttProtocolError::InvalidTopicName)?;
+        let topic = String::from_utf8(topic).map_err(|_| MqttProtocolError::InvalidTopicFilter)?;
 
         let packet_id = if qos != QoS::AtMostOnce {
             let pid = rdr.read_u16::<BigEndian>()?;

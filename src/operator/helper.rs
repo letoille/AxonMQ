@@ -17,6 +17,7 @@ impl Helper<MqttOutSender> {
     pub async fn subscribe(
         &self,
         client_id: String,
+        share_group: Option<String>,
         topic: String,
         qos: QoS,
         no_local: bool,
@@ -26,6 +27,7 @@ impl Helper<MqttOutSender> {
         self.operator_tx
             .send(OperatorCommand::MqttSubscribe {
                 client_id,
+                share_group,
                 topic,
                 qos,
                 no_local,
@@ -39,10 +41,15 @@ impl Helper<MqttOutSender> {
     pub async fn unsubscribe(
         &self,
         client_id: String,
+        share_group: Option<String>,
         topic: String,
     ) -> Result<(), OperatorError<MqttOutSender>> {
         self.operator_tx
-            .send(OperatorCommand::MqttUnsubscribe { client_id, topic })
+            .send(OperatorCommand::MqttUnsubscribe {
+                client_id,
+                share_group,
+                topic,
+            })
             .await
             .map_err(Into::into)
     }

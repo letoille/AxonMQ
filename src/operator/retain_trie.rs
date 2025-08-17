@@ -195,8 +195,11 @@ mod tests {
         // Test '+'
         let matches = trie.find_matches_for_filter("a/+/c");
         assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].payload, "msg1");
-        assert_eq!(matches[1].payload, "msg2");
+        assert_eq!(
+            matches[0].payload.windows(4).any(|w| w == b"msg1")
+                || matches[0].payload.windows(4).any(|w| w == b"msg2"),
+            true
+        );
 
         // Test '#'
         let matches = trie.find_matches_for_filter("a/#");

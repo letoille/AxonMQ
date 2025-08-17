@@ -22,6 +22,10 @@ impl<T> TrieNode<T> {
     }
 }
 
+pub trait ClientId {
+    fn client_id(&self) -> &str;
+}
+
 #[derive(Debug)]
 pub struct TopicTrie<T> {
     root: TrieNode<T>,
@@ -29,7 +33,7 @@ pub struct TopicTrie<T> {
 
 impl<T> TopicTrie<T>
 where
-    T: Clone + Eq + Hash + PartialEq,
+    T: Clone + Eq + Hash + PartialEq + ClientId,
 {
     pub fn new() -> Self {
         TopicTrie {
@@ -130,46 +134,40 @@ where
             if *current_part == "#" {
                 node.multi_wildcard_matches.retain(|v| v != value);
             } else if *current_part == "+" {
-                // 1. 先把子节点 take 出来
                 if let Some(mut child) = node.single_wildcard_child.take() {
-                    // 2. 对子节点递归删除，如果子节点删除后“不为空”，则把它放回去
                     if !Self::recursive_remove(&mut child, remaining_parts, value) {
                         node.single_wildcard_child = Some(child);
                     }
                 }
             } else {
                 let part_string = current_part.to_string();
-                // 1. 先把子节点 remove 出来
                 if let Some(mut child) = node.literal_children.remove(&part_string) {
-                    // 2. 对子节点递归删除，如果子节点删除后“不为空”，则把它放回去
                     if !Self::recursive_remove(&mut child, remaining_parts, value) {
                         node.literal_children.insert(part_string, child);
                     }
                 }
             }
         } else {
-            // --- 递归基准情况：到达目标节点 ---
             node.exact_matches.retain(|v| v != value);
         }
 
         node.is_empty()
     }
 
-    pub fn remove_client(&mut self, value: &T) {
-        Self::recursive_remove_client(&mut self.root, value);
+    pub fn remove_client(&mut self, client_id: &str) {
+        Self::recursive_remove_client(&mut self.root, client_id);
     }
 
-    /// 内部递归函数，移除指定客户端的所有订阅项
-    /// 返回一个布尔值，指示当前节点在删除后是否变为空节点
-    fn recursive_remove_client(node: &mut TrieNode<T>, value: &T) -> bool {
-        node.exact_matches.retain(|v| v != value);
-        node.multi_wildcard_matches.retain(|v| v != value);
+    fn recursive_remove_client(node: &mut TrieNode<T>, client_id: &str) -> bool {
+        node.exact_matches.retain(|v| v.client_id() != client_id);
+        node.multi_wildcard_matches
+            .retain(|v| v.client_id() != client_id);
 
         node.literal_children
-            .retain(|_key, child_node| !Self::recursive_remove_client(child_node, value));
+            .retain(|_key, child_node| !Self::recursive_remove_client(child_node, client_id));
 
         if let Some(mut child) = node.single_wildcard_child.take() {
-            if !Self::recursive_remove_client(&mut child, value) {
+            if !Self::recursive_remove_client(&mut child, client_id) {
                 node.single_wildcard_child = Some(child);
             }
         }

@@ -33,8 +33,8 @@ pub enum MqttProtocolError {
     MalformedPayload,
     #[error("Invalid property")]
     InvalidProperty,
-    #[error("Invalid topic name")]
-    InvalidTopicName,
+    #[error("Invalid topic filter")]
+    InvalidTopicFilter,
     #[error("Invalid return code: {0}")]
     InvalidReturnCode(u8),
 }

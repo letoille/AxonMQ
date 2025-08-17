@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
 use tokio::sync::mpsc;
@@ -18,6 +19,8 @@ use super::out::mqtt::MqttOutSender;
 use super::retain_trie::RetainedTrie;
 use super::trie::TopicTrie;
 use super::utils;
+
+static NEXT_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct Router<T: OutSender + Default> {
     command_rx: Option<mpsc::Receiver<OperatorCommand<T>>>,
@@ -44,6 +47,44 @@ impl Router<MqttOutSender> {
         }
     }
 
+    fn find_clients<'a>(
+        cache: &'a mut HashMap<String, Vec<ClientInfo<MqttOutSender>>>,
+        trie: &'a TopicTrie<ClientInfo<MqttOutSender>>,
+        client_id: &str,
+        topic: &str,
+    ) -> (
+        Vec<&'a mut ClientInfo<MqttOutSender>>,
+        HashMap<String, Vec<&'a mut ClientInfo<MqttOutSender>>>,
+    ) {
+        if !cache.contains_key(topic) {
+            let clients = trie.find_matches(topic);
+            if clients.len() > 0 {
+                let clients = clients.into_iter().cloned().collect::<Vec<_>>();
+                cache.insert(topic.to_string(), clients);
+            }
+        }
+
+        let clients = cache.get_mut(topic);
+        if let Some(clients) = clients {
+            let clients = clients.iter_mut().filter(|c| c.filter(client_id));
+            let (clients_iters, shared_clients): (Vec<_>, Vec<_>) =
+                clients.partition(|c| c.share_group.is_none());
+            let mut group_clients_map: HashMap<String, Vec<&mut ClientInfo<MqttOutSender>>> =
+                HashMap::new();
+            for client in shared_clients.into_iter() {
+                if let Some(group) = &client.share_group {
+                    group_clients_map
+                        .entry(group.clone())
+                        .or_insert_with(Vec::new)
+                        .push(client);
+                }
+            }
+            (clients_iters, group_clients_map)
+        } else {
+            (vec![], HashMap::new())
+        }
+    }
+
     fn send_msg(
         broker_helper: BrokerHelper,
         cache: &mut HashMap<String, Vec<ClientInfo<MqttOutSender>>>,
@@ -56,105 +97,68 @@ impl Router<MqttOutSender> {
         properties: Vec<Property>,
         expiry_at: Option<u64>,
     ) {
-        if let Some(clients) = cache.get(&topic) {
-            let mut clients_iters = clients.iter().filter(|c| c.filter(&client_id)).peekable();
-            while let Some(client) = clients_iters.next() {
-                trace!(
-                    "send to client: {}, topic: {}, expiry_at: {:?}",
-                    g_utils::TruncateDisplay::new(&client.client_id, 24),
-                    g_utils::TruncateDisplay::new(&topic, 128),
-                    expiry_at
-                );
-                if clients_iters.peek().is_some() {
-                    let msg = ClientCommand::Publish {
-                        qos: qos.min(client.qos),
-                        retain,
-                        topic: topic.clone(),
-                        payload: payload.clone(),
-                        properties: properties.clone(),
-                        expiry_at,
-                    };
-                    if client.store && expiry_at.is_some() && expiry_at.unwrap() > 0 {
-                        if client.sender.send(msg.clone()).is_err() {
-                            broker_helper
-                                .store_msg(&client.client_id, msg)
-                                .unwrap_or(());
-                        }
-                    } else {
-                        let _ = client.sender.send(msg);
-                    }
-                } else {
-                    let msg = ClientCommand::Publish {
-                        qos: qos.min(client.qos),
-                        retain,
-                        topic,
-                        payload,
-                        properties,
-                        expiry_at,
-                    };
-                    if client.store && expiry_at.is_some() && expiry_at.unwrap() > 0 {
-                        if client.sender.send(msg.clone()).is_err() {
-                            broker_helper
-                                .store_msg(&client.client_id, msg)
-                                .unwrap_or(());
-                        }
-                    } else {
-                        let _ = client.sender.send(msg);
-                    }
-                    break;
+        let (clients_iters, group_clients_map) =
+            Self::find_clients(cache, trie, &client_id, &topic);
+        let clients_iters = &mut clients_iters.into_iter().peekable();
+
+        let client_send_msg = |client: &mut ClientInfo<MqttOutSender>, msg: ClientCommand| {
+            if client.store && expiry_at.is_some() && expiry_at.unwrap() > 0 {
+                if client.sender.send(msg.clone()).is_err() {
+                    broker_helper
+                        .store_msg(&client.client_id, msg)
+                        .unwrap_or(());
                 }
+            } else {
+                let _ = client.sender.send(msg);
             }
-        } else {
-            let clients = trie.find_matches(&topic);
-            let mut clients_iters = clients.iter().filter(|c| c.filter(&client_id)).peekable();
-            while let Some(client) = clients_iters.next() {
-                trace!(
-                    "send to client: {}, topic: {:.128}, expiry_at: {:?}",
-                    g_utils::TruncateDisplay::new(&client.client_id, 24),
-                    g_utils::TruncateDisplay::new(&topic, 128),
-                    expiry_at
-                );
-                if clients_iters.peek().is_some() {
-                    let msg = ClientCommand::Publish {
-                        qos: qos.min(client.qos),
-                        retain,
-                        topic: topic.clone(),
-                        payload: payload.clone(),
-                        properties: vec![],
-                        expiry_at,
-                    };
-                    if client.store && expiry_at.is_some() && expiry_at.unwrap() > 0 {
-                        if client.sender.send(msg.clone()).is_err() {
-                            broker_helper
-                                .store_msg(&client.client_id, msg)
-                                .unwrap_or(());
-                        }
-                    } else {
-                        let _ = client.sender.send(msg);
-                    }
-                } else {
-                    let msg = ClientCommand::Publish {
-                        qos: qos.min(client.qos),
-                        retain,
-                        topic: topic.clone(),
-                        payload,
-                        properties: vec![],
-                        expiry_at,
-                    };
-                    if client.store && expiry_at.is_some() && expiry_at.unwrap() > 0 {
-                        if client.sender.send(msg.clone()).is_err() {
-                            broker_helper
-                                .store_msg(&client.client_id, msg)
-                                .unwrap_or(());
-                        }
-                    } else {
-                        let _ = client.sender.send(msg);
-                    }
-                    break;
-                }
-            }
-            if clients.len() > 0 {
-                cache.insert(topic.clone(), clients.into_iter().cloned().collect());
+        };
+
+        for (_group, mut clients) in group_clients_map.into_iter() {
+            let current_index = NEXT_INDEX.fetch_add(1, Ordering::Relaxed);
+            let index = current_index % clients.len();
+            let client = &mut clients[index];
+
+            client_send_msg(
+                client,
+                ClientCommand::Publish {
+                    qos: qos.min(client.qos),
+                    retain,
+                    topic: topic.clone(),
+                    payload: payload.clone(),
+                    properties: properties.clone(),
+                    expiry_at,
+                },
+            );
+        }
+
+        while let Some(client) = clients_iters.next() {
+            trace!(
+                "send to client: {}, topic: {}, expiry_at: {:?}",
+                g_utils::TruncateDisplay::new(&client.client_id, 24),
+                g_utils::TruncateDisplay::new(&topic, 128),
+                expiry_at
+            );
+            if clients_iters.peek().is_some() {
+                let msg = ClientCommand::Publish {
+                    qos: qos.min(client.qos),
+                    retain,
+                    topic: topic.clone(),
+                    payload: payload.clone(),
+                    properties: properties.clone(),
+                    expiry_at,
+                };
+                client_send_msg(client, msg);
+            } else {
+                let msg = ClientCommand::Publish {
+                    qos: qos.min(client.qos),
+                    retain,
+                    topic,
+                    payload,
+                    properties,
+                    expiry_at,
+                };
+                client_send_msg(client, msg);
+                break;
             }
         }
     }
@@ -172,6 +176,7 @@ impl Router<MqttOutSender> {
                 match cmd {
                     MqttSubscribe {
                         client_id,
+                        share_group,
                         topic,
                         qos,
                         no_local,
@@ -209,27 +214,43 @@ impl Router<MqttOutSender> {
                         cache.retain(|k, _| !utils::topic_match(&topic, k));
                         trie.insert(
                             &topic,
-                            ClientInfo::new(client_id, topic.clone(), no_local, sender, qos, store),
+                            ClientInfo::new(
+                                client_id,
+                                share_group,
+                                topic.clone(),
+                                no_local,
+                                sender,
+                                qos,
+                                store,
+                            ),
                         );
                     }
-                    MqttUnsubscribe { client_id, topic } => {
+                    MqttUnsubscribe {
+                        client_id,
+                        share_group,
+                        topic,
+                    } => {
                         debug!(
                             "remove client: {}, topic: {}",
                             g_utils::TruncateDisplay::new(&client_id, 24),
                             g_utils::TruncateDisplay::new(&topic, 128)
                         );
                         cache.retain(|_k, v| {
-                            v.retain(|info| !(info.client_id == client_id && info.topic == topic));
+                            v.retain(|info| {
+                                !(info.client_id == client_id
+                                    && info.topic == topic
+                                    && info.share_group == share_group)
+                            });
                             !v.is_empty()
                         });
-                        trie.remove(&topic, &ClientInfo::default(client_id));
+                        trie.remove(&topic, &ClientInfo::default(client_id, share_group));
                     }
                     MqttRemoveClient { client_id } => {
                         debug!(
                             "remove client: {}",
                             g_utils::TruncateDisplay::new(&client_id, 24)
                         );
-                        trie.remove_client(&ClientInfo::default(client_id.clone()));
+                        trie.remove_client(&client_id);
                         cache.retain(|_k, v| {
                             v.retain(|info| info.client_id != client_id);
                             !v.is_empty()

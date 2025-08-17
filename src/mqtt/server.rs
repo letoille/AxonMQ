@@ -195,10 +195,20 @@ impl Broker {
                     store_msgs.remove(&connect.client_id);
                 } else {
                     for (topic, (options, _)) in &client.subscribes {
+                        let (group, actual_topic) = if utils::is_shared_subscription(topic) {
+                            utils::parse_shared_subscription(topic).unwrap_or(("", topic.as_str()))
+                        } else {
+                            ("", topic.as_str())
+                        };
                         let _ = operator_helper
                             .subscribe(
                                 client.client_id.clone(),
-                                topic.clone(),
+                                if group.is_empty() {
+                                    None
+                                } else {
+                                    Some(group.to_string())
+                                },
+                                actual_topic.to_string(),
                                 options.qos,
                                 options.no_local,
                                 client.expiry > 0,
@@ -230,13 +240,22 @@ impl Broker {
                 {
                     let mut codes = vec![];
                     for (topic, options) in subscribe.topics {
-                        if utils::sub_topic_valid(&topic) {
-                            codes.push(ReturnCode::Success);
+                        if utils::sub_topic_valid(&topic)
+                            && (utils::parse_shared_subscription(&topic).is_ok()
+                                || !utils::is_shared_subscription(&topic))
+                        {
+                            let (group, actual_topic) =
+                                utils::parse_shared_subscription(&topic).unwrap_or(("", &topic));
                             if !client.subscribes.contains_key(&topic) {
                                 let _ = operator_helper
                                     .subscribe(
                                         client_id.clone(),
-                                        topic.clone(),
+                                        if group.is_empty() {
+                                            None
+                                        } else {
+                                            Some(group.to_string())
+                                        },
+                                        actual_topic.to_string(),
                                         options.qos,
                                         options.no_local,
                                         client.expiry > 0,
@@ -247,6 +266,8 @@ impl Broker {
                                     .subscribes
                                     .insert(topic, (options, subscribe.properties.clone()));
                             }
+
+                            codes.push(ReturnCode::Success);
                         } else {
                             codes.push(ReturnCode::TopicFilterInvalid);
                         }
@@ -273,7 +294,23 @@ impl Broker {
                     let len = unsubscribe.topics.len();
                     for topic in unsubscribe.topics.into_iter() {
                         if client.subscribes.remove(&topic).is_some() {
-                            let _ = operator_helper.unsubscribe(client_id.clone(), topic).await;
+                            let (share_group, actual_topic) =
+                                if utils::is_shared_subscription(&topic) {
+                                    utils::parse_shared_subscription(&topic).unwrap_or(("", &topic))
+                                } else {
+                                    ("", topic.as_str())
+                                };
+                            let _ = operator_helper
+                                .unsubscribe(
+                                    client_id.clone(),
+                                    if share_group.is_empty() {
+                                        None
+                                    } else {
+                                        Some(share_group.to_string())
+                                    },
+                                    actual_topic.to_string(),
+                                )
+                                .await;
                         }
                     }
                     let ack = UnsubAck::new(unsubscribe.packet_id, vec![ReturnCode::Success; len]);

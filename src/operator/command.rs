@@ -17,6 +17,7 @@ pub(crate) enum OperatorAck {}
 pub(crate) enum OperatorCommand<T: OutSender> {
     MqttSubscribe {
         client_id: String,
+        share_group: Option<String>,
         topic: String,
         qos: QoS,
         no_local: bool,
@@ -25,6 +26,7 @@ pub(crate) enum OperatorCommand<T: OutSender> {
     },
     MqttUnsubscribe {
         client_id: String,
+        share_group: Option<String>,
         topic: String,
     },
     MqttRemoveClient {
