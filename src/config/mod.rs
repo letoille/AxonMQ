@@ -21,8 +21,22 @@ pub struct MqttConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct MqttListenerConfig {
+    pub tcp: MqttListenerTcpConfig,
+    pub tls: MqttListenerTlsConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MqttListenerTcpConfig {
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MqttListenerTlsConfig {
+    pub host: String,
+    pub port: u16,
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 #[derive(Debug, Deserialize)]

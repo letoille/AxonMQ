@@ -12,7 +12,7 @@ mod mqtt;
 mod operator;
 mod utils;
 
-use crate::mqtt::server;
+use crate::mqtt::{listener, server};
 
 static CONFIG: std::sync::OnceLock<config::Config> = std::sync::OnceLock::new();
 
@@ -25,7 +25,7 @@ struct Cmd {
 
 fn get_default_log_dir() -> &'static str {
     if cfg!(windows) {
-        format!("{}\\AxonMQ\\logs\\", std::env::var("ProgramData").unwrap()).leak()
+        format!(r"{}\\AxonMQ\\logs\\", std::env::var("ProgramData").unwrap()).leak()
     } else if cfg!(target_os = "macos") {
         "logs"
     } else if cfg!(unix) {
@@ -66,9 +66,33 @@ async fn main() -> Result<()> {
     info!("Hello, AxonMQ: {}!", config.node.id);
 
     coarsetime::Updater::new(100).start().unwrap();
-    server::Broker::new(&config.mqtt.listener.host, config.mqtt.listener.port)
-        .await
-        .run()
-        .await;
+
+    let mut broker = server::Broker::new().await;
+    let broker_helper = broker.get_helper();
+    let operator_helper = broker.operator_helper();
+    broker.run().await;
+
+    let tcp_listener_config = &config.mqtt.listener.tcp;
+    listener::spawn_tcp_listener(
+        tcp_listener_config.host.clone(),
+        tcp_listener_config.port,
+        broker_helper.clone(),
+        operator_helper.clone(),
+    );
+
+    let tls_listener_config = &config.mqtt.listener.tls;
+    listener::spawn_tls_listener(
+        tls_listener_config.host.clone(),
+        tls_listener_config.port,
+        tls_listener_config.cert_path.clone(),
+        tls_listener_config.key_path.clone(),
+        broker_helper.clone(),
+        operator_helper.clone(),
+    );
+
+    info!("AxonMQ started. Press Ctrl+C to exit.");
+    tokio::signal::ctrl_c().await?;
+    info!("AxonMQ shutting down.");
+
     Ok(())
 }

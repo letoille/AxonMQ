@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use tokio::{sync::mpsc, task, time};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     CONFIG,
@@ -21,7 +21,6 @@ use super::{
         subscribe::{SubAck, SubscribeOption, UnsubAck},
         will::Will,
     },
-    stack::Stack,
     utils,
 };
 
@@ -43,7 +42,6 @@ pub struct Client {
 
 pub struct Broker {
     operator: Option<Operator>,
-    stack: Stack,
 
     broker_tx: mpsc::Sender<BrokerCommand>,
     broker_rx: Option<mpsc::Receiver<BrokerCommand>>,
@@ -53,16 +51,13 @@ pub struct Broker {
 }
 
 impl Broker {
-    pub async fn new(host: &str, port: u16) -> Self {
+    pub async fn new() -> Self {
         let (broker_tx, broker_rx) = mpsc::channel::<BrokerCommand>(128);
         let helper = Self::helper(broker_tx.clone());
         let operator = Operator::new(helper.clone());
 
-        let stack = Stack::new(host, port, helper, operator.mqtt_helper()).await;
-        info!("MQTT TCP listening on {}:{}", host, port);
         Broker {
             operator: Some(operator),
-            stack,
             broker_tx,
             broker_rx: Some(broker_rx),
             store_clients: Some(HashMap::new()),
@@ -70,7 +65,11 @@ impl Broker {
         }
     }
 
-    fn get_helper(&self) -> BrokerHelper {
+    pub fn operator_helper(&self) -> OperatorHelper<MqttOutSender> {
+        self.operator.as_ref().unwrap().mqtt_helper()
+    }
+
+    pub fn get_helper(&self) -> BrokerHelper {
         BrokerHelper {
             broker_tx: self.broker_tx.clone(),
         }
@@ -442,7 +441,5 @@ impl Broker {
                 }
             }
         });
-
-        self.stack.start().await;
     }
 }

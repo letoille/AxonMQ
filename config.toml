@@ -1,9 +1,15 @@
 [node]
 id = "001"
 
-[mqtt.listener]
+[mqtt.listener.tcp]
 host = "127.0.0.1"
 port = 1883
+
+[mqtt.listener.tls]
+host = "127.0.0.1"
+port = 8883
+cert_path = "certs/server.crt"
+key_path = "certs/server.key"
 
 [mqtt.settings]
 # maximum topic length in characters, must be between 1 and 65535
