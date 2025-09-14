@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use coarsetime;
 use tracing::Level;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_appender;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::{Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -28,7 +28,7 @@ fn get_default_log_dir() -> &'static str {
         format!(r"{}\\AxonMQ\\logs\\", std::env::var("ProgramData").unwrap()).leak()
     } else if cfg!(target_os = "macos") {
         "logs"
-    } else if cfg!(unix) {
+    } else if cfg!(target_os = "linux") {
         "/var/log/axonmq/"
     } else {
         "logs"
@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
         operator_helper.clone(),
     );
 
-    let tls_listener_config = &config.mqtt.listener.tls;
+    let tls_listener_config = &config.mqtt.listener.tcp_tls;
     listener::spawn_tls_listener(
         tls_listener_config.host.clone(),
         tls_listener_config.port,
@@ -90,9 +90,29 @@ async fn main() -> Result<()> {
         operator_helper.clone(),
     );
 
+    let ws_listener_config = &config.mqtt.listener.ws;
+    listener::spawn_ws_listener(
+        ws_listener_config.host.clone(),
+        ws_listener_config.port,
+        ws_listener_config.path.clone(),
+        broker_helper.clone(),
+        operator_helper.clone(),
+    );
+
+    let wss_listener_config = &config.mqtt.listener.wss;
+    listener::spawn_wss_listener(
+        wss_listener_config.host.clone(),
+        wss_listener_config.port,
+        wss_listener_config.path.clone(),
+        wss_listener_config.cert_path.clone(),
+        wss_listener_config.key_path.clone(),
+        broker_helper.clone(),
+        operator_helper.clone(),
+    );
+
     info!("AxonMQ started. Press Ctrl+C to exit.");
     tokio::signal::ctrl_c().await?;
-    info!("AxonMQ shutting down.");
+    warn!("AxonMQ shutting down.");
 
     Ok(())
 }
