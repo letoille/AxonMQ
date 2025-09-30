@@ -178,71 +178,156 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::TopicTrie;
+    use super::{ClientId, TopicTrie};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct ClientInfo {
+        id: String,
+    }
+
+    impl ClientId for ClientInfo {
+        fn client_id(&self) -> &str {
+            &self.id
+        }
+    }
 
     #[test]
     fn test_insert_and_match() {
         let mut trie = TopicTrie::new();
-        trie.insert("a/b/c", "client1");
-        trie.insert("a/+/c", "client2");
-        trie.insert("a/b/#", "client3");
-        trie.insert("#", "client4");
-
-        let mut matches = trie.find_matches("a/b/c");
-        matches.sort();
-        assert_eq!(
-            matches,
-            vec![&"client1", &"client2", &"client3", &"client4"]
+        trie.insert(
+            "a/b/c",
+            ClientInfo {
+                id: "client1".to_string(),
+            },
+        );
+        trie.insert(
+            "a/+/c",
+            ClientInfo {
+                id: "client2".to_string(),
+            },
+        );
+        trie.insert(
+            "a/b/#",
+            ClientInfo {
+                id: "client3".to_string(),
+            },
+        );
+        trie.insert(
+            "#",
+            ClientInfo {
+                id: "client4".to_string(),
+            },
         );
 
-        let mut matches = trie.find_matches("a/foo/c");
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/b/c")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
         matches.sort();
-        assert_eq!(matches, vec![&"client2", &"client4"]);
+        assert_eq!(matches, vec!["client1", "client2", "client3", "client4"]);
 
-        let mut matches = trie.find_matches("a/b/d");
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/foo/c")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
         matches.sort();
-        assert_eq!(matches, vec![&"client3", &"client4"]);
+        assert_eq!(matches, vec!["client2", "client4"]);
+
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/b/d")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
+        matches.sort();
+        assert_eq!(matches, vec!["client3", "client4"]);
     }
 
     #[test]
     fn test_remove_exact() {
         let mut trie = TopicTrie::new();
-        trie.insert("a/b/c", "client1");
-        trie.insert("a/b/c", "client2");
+        trie.insert(
+            "a/b/c",
+            ClientInfo {
+                id: "client1".to_string(),
+            },
+        );
+        trie.insert(
+            "a/b/c",
+            ClientInfo {
+                id: "client2".to_string(),
+            },
+        );
 
         let matches = trie.find_matches("a/b/c");
         assert_eq!(matches.len(), 2);
 
-        trie.remove("a/b/c", &"client1");
-        let mut matches = trie.find_matches("a/b/c");
+        trie.remove(
+            "a/b/c",
+            &ClientInfo {
+                id: "client1".to_string(),
+            },
+        );
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/b/c")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
         matches.sort();
-        assert_eq!(matches, vec![&"client2"]);
+        assert_eq!(matches, vec!["client2"]);
     }
 
     #[test]
     fn test_remove_wildcard() {
         let mut trie = TopicTrie::new();
-        trie.insert("a/#", "client1");
-        trie.insert("a/b", "client2");
+        trie.insert(
+            "a/#",
+            ClientInfo {
+                id: "client1".to_string(),
+            },
+        );
+        trie.insert(
+            "a/b",
+            ClientInfo {
+                id: "client2".to_string(),
+            },
+        );
 
-        let mut matches = trie.find_matches("a/b");
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/b")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
         matches.sort();
-        assert_eq!(matches, vec![&"client1", &"client2"]);
+        assert_eq!(matches, vec!["client1", "client2"]);
 
-        trie.remove("a/#", &"client1");
-        let mut matches = trie.find_matches("a/b");
+        trie.remove(
+            "a/#",
+            &ClientInfo {
+                id: "client1".to_string(),
+            },
+        );
+        let mut matches: Vec<&str> = trie
+            .find_matches("a/b")
+            .iter()
+            .map(|c| c.client_id())
+            .collect();
         matches.sort();
-        assert_eq!(matches, vec![&"client2"]);
+        assert_eq!(matches, vec!["client2"]);
     }
 
     #[test]
     fn test_remove_and_prune() {
-        let mut trie = TopicTrie::<i32>::new();
-        trie.insert("a/b/c", 1);
+        let mut trie = TopicTrie::<ClientInfo>::new();
+        let client = ClientInfo {
+            id: "client1".to_string(),
+        };
+        trie.insert("a/b/c", client.clone());
 
         assert!(!trie.find_matches("a/b/c").is_empty());
 
-        trie.remove("a/b/c", &1);
+        trie.remove("a/b/c", &client);
 
         assert!(trie.find_matches("a/b/c").is_empty());
     }
