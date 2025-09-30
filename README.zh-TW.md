@@ -65,8 +65,6 @@ cargo build --release
 ```bash
 # 生成新的私鑰和自簽名憑證
 openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 3650 -subj "/CN=localhost"
-
-cd ..
 ```
 此命令會為 `localhost` 域名建立一個有效期為 10 年的憑證。您的 MQTT 客戶端仍然需要設定為信任此自簽名憑證。
 

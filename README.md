@@ -64,8 +64,6 @@ For any real deployment, you should replace `certs/server.crt` and `certs/server
 ```bash
 # Generate a new private key and self-signed certificate
 openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 3650 -subj "/CN=localhost"
-
-cd ..
 ```
 This command creates a certificate valid for 10 years for the domain `localhost`. Your MQTT clients will still need to be configured to trust this self-signed certificate.
 

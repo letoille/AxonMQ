@@ -1,0 +1,93 @@
+name: Release Orchestrator
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Trigger on tags like v1.0.0, v1.0.0-rc1
+
+jobs:
+  create_release_draft:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag_name: ${{ steps.get_tag.outputs.TAG }}
+    permissions:
+      contents: write
+    steps:
+      - name: Get tag name
+        id: get_tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release Draft
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.TAG }}
+          name: Release ${{ steps.get_tag.outputs.TAG }}
+          draft: true
+          prerelease: ${{ contains(steps.get_tag.outputs.TAG, '-') }}
+          body: |
+            ## Release Notes for ${{ steps.get_tag.outputs.TAG }}
+
+            (Add your release notes here)
+
+  build_ubuntu:
+    needs: create_release_draft
+    uses: ./.github/workflows/ubuntu.yml
+    with:
+      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
+      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+    secrets: inherit
+
+  build_debian:
+    needs: create_release_draft
+    uses: ./.github/workflows/debian.yml
+    with:
+      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
+      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+    secrets: inherit
+
+  build_centos:
+    needs: create_release_draft
+    uses: ./.github/workflows/centos.yml
+    with:
+      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
+      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+    secrets: inherit
+
+  build_macos:
+    needs: create_release_draft
+    uses: ./.github/workflows/macos.yml
+    with:
+      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
+      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+    secrets: inherit
+
+  build_windows:
+    needs: create_release_draft
+    uses: ./.github/workflows/windows.yml
+    with:
+      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
+      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+    secrets: inherit
+
+  publish_release:
+    needs: [build_ubuntu, build_debian, build_centos, build_macos, build_windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get tag name
+        id: get_tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.TAG }}
+          draft: false
+          prerelease: ${{ contains(steps.get_tag.outputs.TAG, '-') }}

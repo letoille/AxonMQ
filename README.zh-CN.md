@@ -68,8 +68,6 @@ cd certs
 
 # 生成新的私钥和自签名证书
 openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 3650 -subj "/CN=localhost"
-
-cd ..
 ```
 此命令会为 `localhost` 域名创建一个有效期为 10 年的证书。您的 MQTT 客户端仍然需要配置为信任此自签名证书。
 

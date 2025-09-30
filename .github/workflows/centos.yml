@@ -1,6 +1,14 @@
 name: axonmq centos
 
-on: workflow_dispatch
+on:
+  workflow_call:
+    inputs:
+      upload_url:
+        required: true
+        type: string
+      tag_name:
+        required: true
+        type: string
 
 jobs:
   build:
@@ -11,9 +19,8 @@ jobs:
     container: ghcr.io/axonmq/build-debian${{ matrix.version }}:${{ github.ref_name }}
 
     steps:
-    - name: Get project version
-      run: echo "VERSION=$(cargo pkgid | cut -d# -f2 | cut -d: -f2)" >> $GITHUB_ENV
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     - run: rustup default stable
     - uses: Swatinem/rust-cache@v2
       with:
@@ -35,9 +42,14 @@ jobs:
         ls -l target/generate-rpm/
         ldd --version
 
-    - name: upload amd64 artifact
-      uses: actions/upload-artifact@v4
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: centos-${{ matrix.version }}-amd64-axonmq
-        path: |
-          target/generate-rpm/axonmq-${{ env.VERSION }}-1.x86_64.rpm
+        upload_url: ${{ inputs.upload_url }}
+        asset_path: ./target/generate-rpm/axonmq-${{ env.VERSION }}-1.x86_64.rpm
+        asset_name: centos-${{ matrix.version }}-axonmq-${{ env.VERSION }}-1.x86_64.rpm
+        asset_content_type: application/x-rpm
+
+    

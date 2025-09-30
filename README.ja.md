@@ -65,8 +65,6 @@ cargo build --release
 ```bash
 # 新しい秘密鍵と自己署名証明書を生成
 openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 3650 -subj "/CN=localhost"
-
-cd ..
 ```
 このコマンドは、`localhost`ドメイン用の有効期間10年の証明書を作成します。MQTTクライアント側では、この自己署名証明書を信頼するように設定する必要があります。
 

@@ -1,6 +1,14 @@
 name: axonmq macos
 
-on: workflow_dispatch
+on:
+  workflow_call:
+    inputs:
+      upload_url:
+        required: true
+        type: string
+      tag_name:
+        required: true
+        type: string
 
 jobs:
   build:
@@ -33,8 +41,14 @@ jobs:
         cargo build --release --target aarch64-apple-darwin
         ls target/aarch64-apple-darwin/release
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: macos_apple_silicon_axonmq
-        path: target/aarch64-apple-darwin/release/axonmq
+        upload_url: ${{ inputs.upload_url }}
+        asset_path: ./target/aarch64-apple-darwin/release/axonmq
+        asset_name: macos-aarch64-axonmq
+        asset_content_type: application/octet-stream
+
+    
