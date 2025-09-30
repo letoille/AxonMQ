@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/letoille/AxonMQ/discussions/new?category=q-a
+    about: Ask the community for help or general questions.
+  - name: Report a security vulnerability
+    url: https://github.com/letoille/AxonMQ/security/policy
+    about: Please report security vulnerabilities responsibly.
+issue_templates:
+  - name: Bug Report
+    about: Report a bug or unexpected behavior in AxonMQ
+    url: .github/ISSUE_TEMPLATE/bug_report.md
+  - name: Feature Request
+    about: Suggest an idea for a new feature or enhancement
+    url: .github/ISSUE_TEMPLATE/feature_request.md
