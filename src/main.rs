@@ -19,8 +19,8 @@ static CONFIG: std::sync::OnceLock<config::Config> = std::sync::OnceLock::new();
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Cmd {
-    #[arg(short, long, value_name = "config.toml", default_value = "config.toml")]
-    config: String,
+    #[arg(short, long, value_name = "config <dir>", default_value = "./")]
+    config_dir: String,
 }
 
 fn get_default_log_dir() -> &'static str {
@@ -39,7 +39,7 @@ fn get_default_log_dir() -> &'static str {
 async fn main() -> Result<()> {
     let cli = Cmd::parse();
 
-    let config = config::Config::from_file(&cli.config)?;
+    let config = config::Config::from_file(&cli.config_dir)?;
     CONFIG.set(config).unwrap();
 
     let filter = Targets::new()

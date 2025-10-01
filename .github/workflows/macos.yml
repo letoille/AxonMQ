@@ -1,18 +1,12 @@
 name: axonmq macos
 
-on:
-  workflow_call:
-    inputs:
-      upload_url:
-        required: true
-        type: string
-      tag_name:
-        required: true
-        type: string
+on: workflow_dispatch
 
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
@@ -41,14 +35,34 @@ jobs:
         cargo build --release --target aarch64-apple-darwin
         ls target/aarch64-apple-darwin/release
 
+    - name: Create and Upload macOS Package
+      run: |
+        PACKAGE_DIR="axonmq-macos-${{ inputs.tag_name }}"
+        mkdir $PACKAGE_DIR
+        cp target/aarch64-apple-darwin/release/axonmq $PACKAGE_DIR/
+        cp config.toml $PACKAGE_DIR/
+        mkdir $PACKAGE_DIR/certs
+        cp certs/server.crt $PACKAGE_DIR/certs/
+        cp certs/server.key $PACKAGE_DIR/certs/
+        cp LICENSE $PACKAGE_DIR/
+        zip -r $PACKAGE_DIR.zip $PACKAGE_DIR
+        echo "ASSET_NAME=${PACKAGE_DIR}.zip" >> $GITHUB_ENV
+        echo "ASSET_PATH=${PACKAGE_DIR}.zip" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Upload Artifact (Manual Trigger)
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v4
+      with:
+        name: axonmq-macos-${{ inputs.tag_name }}
+        path: ${{ env.ASSET_PATH }}
+
     - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
+      if: github.event_name != 'workflow_dispatch'
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ inputs.upload_url }}
-        asset_path: ./target/aarch64-apple-darwin/release/axonmq
-        asset_name: macos-aarch64-axonmq
-        asset_content_type: application/octet-stream
+        files: ${{ env.ASSET_PATH }}
 
     

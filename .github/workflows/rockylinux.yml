@@ -1,4 +1,4 @@
-name: axonmq ubuntu
+name: axonmq rockylinux
 
 on:
   workflow_call:
@@ -22,16 +22,16 @@ jobs:
       packages: read
     strategy:
       matrix:
-        version: [20, 22, 24]
-    container: ghcr.io/letoille/axonmq/ubuntu-${{ matrix.version }}:${{ inputs.branch_name || github.ref_name }}
-
+        version: [8, 9]
+    container: ghcr.io/letoille/axonmq/rockylinux-${{ matrix.version }}:${{ inputs.branch_name || github.ref_name }}
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     - run: rustup default stable
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: "linux-ubuntu-${{ matrix.version }}"
+        prefix-key: "linux-rockylinux-${{ matrix.version }}"
         shared-key: ""
         key: ""
         env-vars: ""
@@ -42,29 +42,28 @@ jobs:
         cache-all-crates: ""
         save-if: ${{ github.ref == 'refs/heads/main' }}
         cache-provider: "buildjet"
+
     - name: Build
-      run: |
-        cargo build --release
-      
-    - name: package
-      run: |
-        cargo deb --no-build
+      run: cargo build --release
+
+    - name: Generate RPM package
+      run: cargo generate-rpm
 
     - name: rename
       if: github.event_name != 'workflow_dispatch'
       run: |
-        mv ./target/debian/axonmq_${{ inputs.tag_name }}-1_amd64.deb ./target/debian/axonmq-ubuntu-${{ matrix.version }}-${{ inputs.tag_name }}-1_amd64.deb 
+        mv ./target/generate-rpm/axonmq-${{ inputs.tag_name }}-1.x86_64.rpm ./target/generate-rpm/axonmq-rockylinux-${{ matrix.version }}-${{ inputs.tag_name }}-1.x86_64.rpm
     - name: Upload Release Asset
       if: github.event_name != 'workflow_dispatch'
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: ./target/debian/axonmq-ubuntu-${{ matrix.version }}-${{ inputs.tag_name }}-1_amd64.deb
+        files: ./target/generate-rpm/axonmq-rockylinux-${{ matrix.version }}-${{ inputs.tag_name }}-1.x86_64.rpm
 
-    - name: Upload Deb artifact
+    - name: Upload RPM artifact
       if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
-        name: ubuntu-${{ matrix.version }}-axonmq
-        path: target/debian/axonmq_*-1_amd64.deb
+        name: rockylinux-${{ matrix.version }}-axonmq
+        path: ./target/generate-rpm/axonmq-*.rpm

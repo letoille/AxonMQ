@@ -69,9 +69,31 @@ pub struct MqttSettings {
 }
 
 impl Config {
-    pub fn from_file(path: &str) -> Result<Self> {
+    pub fn from_file(dir: &str) -> Result<Self> {
+        let path = std::path::Path::new(dir).join("config.toml");
         let content = std::fs::read_to_string(path).context("failed to read config file")?;
-        let raw: Config = toml::from_str(&content).context("failed to parse config file")?;
+        let mut raw: Config = toml::from_str(&content).context("failed to parse config file")?;
+
+        raw.mqtt.listener.tcp_tls.cert_path = std::path::Path::new(dir)
+            .join(raw.mqtt.listener.tcp_tls.cert_path.as_str())
+            .to_str()
+            .unwrap()
+            .to_string();
+        raw.mqtt.listener.tcp_tls.key_path = std::path::Path::new(dir)
+            .join(raw.mqtt.listener.tcp_tls.key_path.as_str())
+            .to_str()
+            .unwrap()
+            .to_string();
+        raw.mqtt.listener.wss.cert_path = std::path::Path::new(dir)
+            .join(raw.mqtt.listener.wss.cert_path.as_str())
+            .to_str()
+            .unwrap()
+            .to_string();
+        raw.mqtt.listener.wss.key_path = std::path::Path::new(dir)
+            .join(raw.mqtt.listener.wss.key_path.as_str())
+            .to_str()
+            .unwrap()
+            .to_string();
 
         Ok(raw)
     }

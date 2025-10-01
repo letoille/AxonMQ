@@ -28,6 +28,7 @@ pub struct SubAck {
     pub(crate) properties: Vec<Property>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Unsubscribe {
     pub(crate) packet_id: u16,
