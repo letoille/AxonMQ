@@ -32,6 +32,10 @@ AxonMQ 是一个用 Rust 构建的轻量级、高性能 MQTT 代理，旨在实�
 
 ### 🚀 快速入门
 
+#### 0. 从发布页面下载
+
+针对不同平台预构建的软件包可在 [GitHub 发布页面](https://github.com/letoille/AxonMQ/releases) 获取。您可以直接下载 `.deb` (适用于 Debian/Ubuntu)、`.rpm` (适用于 Rocky Linux/Centos) 和 `.zip` (适用于 Windows) 软件包。
+
 #### 1. 从源码构建
 
 确保您已经安装了 Rust 工具链。

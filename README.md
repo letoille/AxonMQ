@@ -30,6 +30,10 @@ A lightweight, high-performance MQTT broker built in Rust, designed for reliabil
 
 ### 🚀 Getting Started
 
+#### 0. Download from Releases
+
+Pre-built packages for various platforms are available on the [GitHub Releases page](https://github.com/letoille/AxonMQ/releases). You can download `.deb` (for Debian/Ubuntu), `.rpm` (for Rocky Linux/Centos), and `.zip` (for Windows) packages directly.
+
 #### 1. Build from Source
 
 Ensure you have the Rust toolchain installed.

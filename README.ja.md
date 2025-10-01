@@ -30,6 +30,10 @@
 
 ### 🚀 クイックスタート
 
+#### 0. リリースからダウンロード
+
+様々なプラットフォーム向けのビルド済みパッケージは、[GitHubリリース](https://github.com/letoille/AxonMQ/releases)ページから入手できます。`.deb` (Debian/Ubuntu用)、`.rpm` (Rocky Linux/Centos用)、`.zip` (Windows用) パッケージを直接ダウンロードして使用できます。
+
 #### 1. ソースからビルド
 
 Rustツールチェーンがインストールされていることを確認してください。
