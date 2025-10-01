@@ -13,12 +13,12 @@ key_path = "certs/server.key"
 
 [mqtt.listener.ws]
 host = "127.0.0.1"
-port = 8080
+port = 8081
 path = "/mqtt"
 
 [mqtt.listener.wss]
 host = "127.0.0.1"
-port = 8081
+port = 8082
 path = "/mqtt"
 cert_path = "certs/server.crt"
 key_path = "certs/server.key"

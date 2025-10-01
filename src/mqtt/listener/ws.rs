@@ -96,7 +96,7 @@ pub fn spawn_ws_listener(
                         .await;
                     }
                     Err(e) => {
-                        error!("WebSocket handshake error from {}: {}", addr, e);
+                        debug!("WebSocket handshake error from {}: {}", addr, e);
                     }
                 }
             });
