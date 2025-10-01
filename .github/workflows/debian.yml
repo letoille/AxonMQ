@@ -9,14 +9,21 @@ on:
       tag_name:
         required: true
         type: string
+      branch_name:
+        required: false
+        type: string
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
     strategy:
       matrix:
-        version: [10, 11, 12]
-    container: ghcr.io/axonmq/build-debian${{ matrix.version }}:${{ github.ref_name }}
+        version: [11, 12]
+    container: ghcr.io/letoille/axonmq/debian-${{ matrix.version }}:${{ inputs.branch_name || github.ref_name }}
 
     steps:
     - name: Checkout code
@@ -24,7 +31,7 @@ jobs:
     - run: rustup default stable
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: "linux-debian${{ matrix.version }}"
+        prefix-key: "linux-debian-${{ matrix.version }}"
         shared-key: ""
         key: ""
         env-vars: ""
@@ -35,27 +42,31 @@ jobs:
         cache-all-crates: ""
         save-if: ${{ github.ref == 'refs/heads/main' }}
         cache-provider: "buildjet"
+
     - name: Build
       run: |
         cargo build --release
-        cargo generate-rpm -p axonmq
-        ls -l target/generate-rpm/
-        ldd --version
-
+      
     - name: package
       run: |
         cargo deb --no-build
-        ls -lh target/debian/
-        mv target/debian/axonmq_${{ env.VERSION }}-1_amd64.deb axonmq_${{ env.VERSION }}-1_amd64.deb
 
+    - name: rename
+      if: github.event_name != 'workflow_dispatch'
+      run: |
+        mv ./target/debian/axonmq_${{ inputs.tag_name }}-1_amd64.deb ./target/debian/axonmq-debian-${{ matrix.version }}-${{ inputs.tag_name }}-1_amd64.deb
     - name: Upload Release Assets
-      uses: softprops/action-gh-release@v1
+      if: github.event_name != 'workflow_dispatch'
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ inputs.upload_url }}
-        files: |
-          ./axonmq-${{ env.VERSION }}-amd64.deb
-          ./target/generate-rpm/axonmq-${{ env.VERSION }}-1.x86_64.rpm
+        files: ./target/debian/axonmq-debian-${{ matrix.version }}-${{ inputs.tag_name }}-1_amd64.deb
 
-    
+    - name: Upload Deb artifact
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v4
+      with:
+        name: debian-${{ matrix.version }}-axonmq
+        path: target/debian/axonmq_*-1_amd64.deb
+

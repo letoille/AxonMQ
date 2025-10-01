@@ -1,9 +1,12 @@
-name: Release Orchestrator
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*' # Trigger on tags like v1.0.0, v1.0.0-rc1
+      - '*.*.*' # Trigger on tags like 1.0.0, 1.0.0-rc1
+
+env:
+  BRANCH: main
 
 jobs:
   create_release_draft:
@@ -11,6 +14,7 @@ jobs:
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       tag_name: ${{ steps.get_tag.outputs.TAG }}
+      branch_name: ${{ env.BRANCH }}
     permissions:
       contents: write
     steps:
@@ -34,47 +38,53 @@ jobs:
             (Add your release notes here)
 
   build_ubuntu:
-    needs: create_release_draft
+    needs: [create_release_draft]
     uses: ./.github/workflows/ubuntu.yml
+    permissions:
+      contents: write
+      packages: read
     with:
       upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
       tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+      branch_name: ${{ needs.create_release_draft.outputs.branch_name }}
     secrets: inherit
 
   build_debian:
-    needs: create_release_draft
+    needs: [create_release_draft]
     uses: ./.github/workflows/debian.yml
+    permissions:
+      contents: write
+      packages: read
     with:
       upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
       tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+      branch_name: ${{ needs.create_release_draft.outputs.branch_name }}
     secrets: inherit
 
-  build_centos:
-    needs: create_release_draft
-    uses: ./.github/workflows/centos.yml
+  build_rockylinux:
+    needs: [create_release_draft]
+    uses: ./.github/workflows/rockylinux.yml
+    permissions:
+      contents: write
+      packages: read
     with:
       upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
       tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
-    secrets: inherit
-
-  build_macos:
-    needs: create_release_draft
-    uses: ./.github/workflows/macos.yml
-    with:
-      upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
-      tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
+      branch_name: ${{ needs.create_release_draft.outputs.branch_name }}
     secrets: inherit
 
   build_windows:
-    needs: create_release_draft
+    needs: [create_release_draft]
     uses: ./.github/workflows/windows.yml
+    permissions:
+      contents: write
     with:
       upload_url: ${{ needs.create_release_draft.outputs.upload_url }}
       tag_name: ${{ needs.create_release_draft.outputs.tag_name }}
     secrets: inherit
 
   publish_release:
-    needs: [build_ubuntu, build_debian, build_centos, build_macos, build_windows]
+    needs: [build_ubuntu, build_debian, build_rockylinux, build_windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,13 +1,19 @@
-ARG UBUNTU_VERSION=22.04
-FROM ubuntu:${UBUNTU_VERSION}
+ARG VERSION=22
+ARG TZ=Asia/Singapore
+
+FROM ubuntu:${VERSION}.04
 
 USER root
 
-RUN apt-get -y update 
-RUN apt-get -y install \
-	sudo pkg-config git gcc g++ openssl libssl-dev clang curl make cmake protobuf-compiler 
+ENV TZ=${TZ}
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get -y update \
+    && apt-get -y install tzdata \
+    && apt-get -y install \
+        sudo pkg-config git gcc g++ openssl libssl-dev clang curl make cmake protobuf-compiler rpm \
+    && rm -rf /var/lib/apt/lists/*
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:$PATH"
 RUN rustup default stable
-RUN cargo install cargo-generate-rpm
 RUN cargo install cargo-deb

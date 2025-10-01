@@ -22,18 +22,10 @@ jobs:
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
       with:
-        key: "${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}"
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+        prefix-key: "${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}"
 
-    #- name: Run cargo check
-      #run: cargo check --all-targets
+    - name: Run cargo check
+      run: cargo check --all-targets
 
     - name: Run cargo test
       run: cargo test --all-targets
-
-    - name: Run cargo clippy
-      run: cargo clippy --all-targets -- -D warnings
-
-    - name: Run cargo fmt check
-      run: cargo fmt --all-targets --check

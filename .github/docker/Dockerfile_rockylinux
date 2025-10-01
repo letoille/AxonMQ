@@ -1,0 +1,25 @@
+ARG VERSION=8
+ARG TZ=Asia/Singapore
+
+FROM rockylinux:${VERSION}
+
+RUN dnf update -y && \
+    dnf install -y --allowerasing tzdata && \
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone && \
+    dnf install -y --allowerasing \
+        curl \
+        gcc \
+        make \
+        pkgconfig \
+        openssl-devel \
+        systemd-devel \
+        rpm-build \
+        git \
+    && dnf clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN rustup default stable
+RUN cargo install cargo-generate-rpm
