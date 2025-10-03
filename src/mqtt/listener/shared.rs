@@ -8,7 +8,7 @@ use tokio_util::codec::Framed;
 use tracing::{Instrument, debug};
 
 use crate::CONFIG;
-use crate::operator::{helper::Helper as OperatorHelper, out::mqtt::MqttOutSender};
+use crate::operator::helper::Helper as OperatorHelper;
 use crate::utils as g_utils;
 
 use crate::mqtt::protocol::{codec::MessageCodec, conn::Disconnect, message::Message, publish};
@@ -25,7 +25,7 @@ pub async fn process_client<S>(
     client_stream: S,
     addr: SocketAddr,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -195,7 +195,7 @@ pub async fn process_client<S>(
 
 pub async fn handle_message(
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
     inflight_store: &mut Vec<(u64, Message)>,
     qos2_msg_store: &mut Vec<publish::Publish>,
     client_id: &str,
@@ -255,6 +255,19 @@ pub async fn handle_message(
                     ReturnCode::Success,
                     vec![],
                 );
+                if publish.retain {
+                    broker_helper
+                        .retain_message(
+                            publish.topic.clone(),
+                            publish.qos,
+                            publish.payload.clone(),
+                            publish.properties.clone(),
+                            publish.expiry_at,
+                        )
+                        .await
+                        .ok();
+                }
+
                 operator_helper
                     .publish(
                         client_id.to_string(),
@@ -282,6 +295,18 @@ pub async fn handle_message(
                 qos2_msg_store.push(publish);
                 Ok(Some(Message::PubRec(pub_rec)))
             } else {
+                if publish.retain {
+                    broker_helper
+                        .retain_message(
+                            publish.topic.clone(),
+                            publish.qos,
+                            publish.payload.clone(),
+                            publish.properties.clone(),
+                            publish.expiry_at,
+                        )
+                        .await
+                        .ok();
+                }
                 operator_helper
                     .publish(
                         client_id.to_string(),
@@ -328,6 +353,18 @@ pub async fn handle_message(
             let mut found = false;
             for (i, p) in qos2_msg_store.iter().enumerate() {
                 if p.packet_id == Some(pubrel.packet_id) {
+                    if p.retain {
+                        broker_helper
+                            .retain_message(
+                                p.topic.clone(),
+                                p.qos,
+                                p.payload.clone(),
+                                p.properties.clone(),
+                                p.expiry_at,
+                            )
+                            .await
+                            .ok();
+                    }
                     operator_helper
                         .publish(
                             client_id.to_string(),

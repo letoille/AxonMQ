@@ -7,8 +7,8 @@ use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls::ServerConfig};
 use tracing::{debug, error, info};
 
-use crate::operator::{helper::Helper as OperatorHelper, out::mqtt::MqttOutSender};
 use crate::mqtt::helper::BrokerHelper;
+use crate::operator::helper::Helper as OperatorHelper;
 
 use super::shared::process_client;
 
@@ -16,7 +16,7 @@ pub fn spawn_tcp_listener(
     host: String,
     port: u16,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) {
     tokio::spawn(async move {
         let addr = format!("{}:{}", host, port);
@@ -44,7 +44,7 @@ pub fn spawn_tls_listener(
     cert_path: String,
     key_path: String,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) {
     tokio::spawn(async move {
         let addr = format!("{}:{}", host, port);

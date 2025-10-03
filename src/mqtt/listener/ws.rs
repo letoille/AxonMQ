@@ -23,7 +23,7 @@ use crate::mqtt::{
     helper::BrokerHelper,
     protocol::{codec::MessageCodec, conn::Disconnect, message::Message, publish},
 };
-use crate::operator::{helper::Helper as OperatorHelper, out::mqtt::MqttOutSender};
+use crate::operator::helper::Helper as OperatorHelper;
 use crate::utils as g_utils;
 
 use super::shared::{get_packet_id, handle_message};
@@ -36,7 +36,7 @@ pub fn spawn_ws_listener(
     port: u16,
     path: String,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) {
     tokio::spawn(async move {
         let addr = format!("{}:{}", host, port);
@@ -111,7 +111,7 @@ pub fn spawn_wss_listener(
     cert_path: String,
     key_path: String,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) {
     tokio::spawn(async move {
         let addr = format!("{}:{}", host, port);
@@ -180,7 +180,7 @@ pub fn spawn_wss_listener(
                                 .await;
                             }
                             Err(e) => {
-                                error!("WebSocket handshake error over TLS from {}: {}", addr, e);
+                                debug!("WebSocket handshake error over TLS from {}: {}", addr, e);
                             }
                         }
                     }
@@ -197,7 +197,7 @@ async fn handle_websocket_connection<S>(
     mut ws_stream: tokio_tungstenite::WebSocketStream<S>,
     addr: SocketAddr,
     broker_helper: BrokerHelper,
-    operator_helper: OperatorHelper<MqttOutSender>,
+    operator_helper: OperatorHelper,
 ) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {

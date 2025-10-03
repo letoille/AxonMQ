@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use tokio::{sync::mpsc, task, time};
 use tracing::debug;
 
+use crate::operator::sink::local::LocalClientSink;
 use crate::{
     CONFIG,
     mqtt::helper::ClientHelper,
-    operator::{Operator, helper::Helper as OperatorHelper, out::mqtt::MqttOutSender},
+    operator::{Operator, helper::Helper as OperatorHelper},
     utils as g_utils,
 };
 
@@ -21,6 +22,7 @@ use super::{
         subscribe::{SubAck, SubscribeOption, UnsubAck},
         will::Will,
     },
+    retain_trie::{RetainedMessage, RetainedTrie},
     utils,
 };
 
@@ -48,13 +50,14 @@ pub struct Broker {
 
     store_clients: Option<HashMap<String, Client>>,
     clean_clients: Option<HashMap<String, Client>>,
+
+    retain_trie: Option<RetainedTrie>,
 }
 
 impl Broker {
     pub async fn new() -> Self {
         let (broker_tx, broker_rx) = mpsc::channel::<BrokerCommand>(128);
-        let helper = Self::helper(broker_tx.clone());
-        let operator = Operator::new(helper.clone());
+        let operator = Operator::new();
 
         Broker {
             operator: Some(operator),
@@ -62,21 +65,18 @@ impl Broker {
             broker_rx: Some(broker_rx),
             store_clients: Some(HashMap::new()),
             clean_clients: Some(HashMap::new()),
+            retain_trie: Some(RetainedTrie::new()),
         }
     }
 
-    pub fn operator_helper(&self) -> OperatorHelper<MqttOutSender> {
-        self.operator.as_ref().unwrap().mqtt_helper()
+    pub fn operator_helper(&self) -> OperatorHelper {
+        self.operator.as_ref().unwrap().matcher_helper()
     }
 
     pub fn get_helper(&self) -> BrokerHelper {
         BrokerHelper {
             broker_tx: self.broker_tx.clone(),
         }
-    }
-
-    fn helper(broker_tx: mpsc::Sender<BrokerCommand>) -> BrokerHelper {
-        BrokerHelper { broker_tx }
     }
 
     fn prepare_will_message(broker_helper: BrokerHelper, client_id: String, will: Will) {
@@ -104,9 +104,10 @@ impl Broker {
         store_clients: &mut HashMap<String, Client>,
         clean_clients: &mut HashMap<String, Client>,
         cmd: BrokerCommand,
-        operator_helper: &mut OperatorHelper<MqttOutSender>,
+        operator_helper: &mut OperatorHelper,
         broker_helper: BrokerHelper,
         store_msgs: &mut HashMap<String, Vec<ClientCommand>>,
+        retain_trie: &mut RetainedTrie,
     ) {
         use BrokerCommand::*;
         match cmd {
@@ -129,7 +130,7 @@ impl Broker {
                             .ok();
                         if let Some(will) = &old_client.will {
                             Self::prepare_will_message(
-                                broker_helper,
+                                broker_helper.clone(),
                                 old_client.client_id.clone(),
                                 will.clone(),
                             );
@@ -211,7 +212,10 @@ impl Broker {
                                 options.qos,
                                 options.no_local,
                                 client.expiry > 0,
-                                MqttOutSender::new(client.client_helper.get()),
+                                LocalClientSink::new(
+                                    client.client_helper.get(),
+                                    broker_helper.clone(),
+                                ),
                             )
                             .await;
                     }
@@ -246,6 +250,8 @@ impl Broker {
                             let (group, actual_topic) =
                                 utils::parse_shared_subscription(&topic).unwrap_or(("", &topic));
                             if !client.subscribes.contains_key(&topic) {
+                                let msgs = retain_trie.find_matches_for_filter(&topic);
+
                                 let _ = operator_helper
                                     .subscribe(
                                         client_id.clone(),
@@ -258,9 +264,26 @@ impl Broker {
                                         options.qos,
                                         options.no_local,
                                         client.expiry > 0,
-                                        MqttOutSender::new(client.client_helper.get()),
+                                        LocalClientSink::new(
+                                            client.client_helper.get(),
+                                            broker_helper.clone(),
+                                        ),
                                     )
                                     .await;
+
+                                for msg in msgs {
+                                    let _ = operator_helper
+                                        .publish(
+                                            client_id.clone(),
+                                            true,
+                                            msg.qos,
+                                            msg.topic.clone(),
+                                            msg.payload.clone(),
+                                            msg.properties.clone(),
+                                            msg.expiry_at,
+                                        )
+                                        .await;
+                                }
                                 client
                                     .subscribes
                                     .insert(topic, (options, subscribe.properties.clone()));
@@ -360,15 +383,28 @@ impl Broker {
                 topic,
                 payload,
                 properties,
-                expire_at,
+                expiry_at,
             } => {
                 let client = store_clients
                     .get(&client_id)
                     .or_else(|| clean_clients.get(&client_id));
                 if client.is_none() || !client.unwrap().connected {
+                    if retain {
+                        broker_helper
+                            .retain_message(
+                                topic.clone(),
+                                qos,
+                                payload.clone(),
+                                properties.clone(),
+                                expiry_at,
+                            )
+                            .await
+                            .ok();
+                    }
+
                     let _ = operator_helper
                         .publish(
-                            client_id, retain, qos, topic, payload, properties, expire_at,
+                            client_id, retain, qos, topic, payload, properties, expiry_at,
                         )
                         .await;
                 }
@@ -393,6 +429,28 @@ impl Broker {
                     }
                 }
             }
+            RetainMessage {
+                topic,
+                qos,
+                payload,
+                properties,
+                expiry_at,
+            } => {
+                if payload.is_empty() {
+                    retain_trie.remove(&topic);
+                } else {
+                    retain_trie.insert(
+                        &topic,
+                        RetainedMessage {
+                            qos,
+                            topic: topic.clone(),
+                            payload: payload.clone(),
+                            properties: properties.clone(),
+                            expiry_at,
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -405,15 +463,16 @@ impl Broker {
         let mut clean_clients = self.clean_clients.take().unwrap();
 
         let mut clean_tk = time::interval(time::Duration::from_secs(60));
-        let mut operator_helper = operator.mqtt_helper();
+        let mut operator_helper = operator.matcher_helper();
         let broker_helper = self.get_helper();
         let mut store_msgs: HashMap<String, Vec<ClientCommand>> = HashMap::new();
+        let mut retain_trie = self.retain_trie.take().unwrap();
 
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     Some(cmd) = broker_rx.recv() => {
-                        Self::handle_message(&mut store_clients, &mut clean_clients, cmd, &mut operator_helper, broker_helper.clone(), &mut store_msgs).await;
+                        Self::handle_message(&mut store_clients, &mut clean_clients, cmd, &mut operator_helper, broker_helper.clone(), &mut store_msgs, &mut retain_trie).await;
                     }
                     _ = clean_tk.tick() => {
                         let mut remove_ids = Vec::new();
@@ -436,7 +495,7 @@ impl Broker {
                             store_msgs.remove(&client_id);
                             let _ = operator_helper.remove_client(client_id).await;
                         }
-                        operator_helper.purge_expiry().await.ok();
+                        retain_trie.purge_expired();
                     }
                 }
             }

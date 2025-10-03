@@ -6,8 +6,8 @@ use crate::mqtt::{QoS, protocol::property::Property};
 
 #[derive(Clone)]
 pub struct RetainedMessage {
-    pub qos: QoS,
     pub topic: String,
+    pub qos: QoS,
     pub payload: Bytes,
     pub properties: Vec<Property>,
     pub expiry_at: Option<u64>,

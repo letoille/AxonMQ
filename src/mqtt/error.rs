@@ -2,13 +2,13 @@ use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 
 use super::code::ReturnCode;
-use super::command::{BrokerCommand, ClientCommand};
+use super::command::ClientCommand;
 
 #[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum MqttProtocolError {
-    #[error("Channel send error: {0}")]
-    BrokerChannelSendError(#[from] mpsc::error::SendError<BrokerCommand>),
+    #[error("Channel send error")]
+    BrokerChannelSendError,
     #[error("Channel send error: {0}")]
     StackChannelSendError(#[from] mpsc::error::SendError<ClientCommand>),
     #[error("Oneshot receive error: {0}")]

@@ -8,8 +8,10 @@ use tracing_subscriber::filter::Targets;
 use tracing_subscriber::{Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
+mod message;
 mod mqtt;
 mod operator;
+mod plugin;
 mod utils;
 
 use crate::mqtt::{listener, server};
@@ -44,7 +46,8 @@ async fn main() -> Result<()> {
 
     let filter = Targets::new()
         .with_target("axonmq", Level::INFO)
-        .with_target("axonmq::operator::router", Level::INFO);
+        .with_target("axonmq::mqtt", Level::INFO)
+        .with_target("axonmq::operator::matcher", Level::INFO);
 
     let file_appender = tracing_appender::rolling::daily(get_default_log_dir(), "axonmq.log");
     let (nb, _guard) = tracing_appender::non_blocking(file_appender);

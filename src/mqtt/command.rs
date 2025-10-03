@@ -38,7 +38,14 @@ pub(crate) enum BrokerCommand {
         topic: String,
         payload: Bytes,
         properties: Vec<Property>,
-        expire_at: Option<u64>,
+        expiry_at: Option<u64>,
+    },
+    RetainMessage {
+        topic: String,
+        qos: QoS,
+        payload: Bytes,
+        properties: Vec<Property>,
+        expiry_at: Option<u64>,
     },
     StoreMsg {
         client_id: String,
@@ -50,9 +57,9 @@ pub(crate) enum BrokerCommand {
 pub enum ClientCommand {
     Disconnect(ReturnCode),
     Publish {
+        topic: String,
         qos: QoS,
         retain: bool,
-        topic: String,
         payload: Bytes,
         properties: Vec<Property>,
         expiry_at: Option<u64>,

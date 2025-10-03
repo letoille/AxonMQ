@@ -1,36 +1,27 @@
-mod client;
 mod command;
 mod error;
 pub mod helper;
-pub mod out;
-mod retain_trie;
-mod router;
+mod matcher;
+pub mod sink;
 mod trie;
 mod utils;
 
-use out::mqtt::MqttOutSender;
-use router::Router;
-
-use crate::mqtt::helper::BrokerHelper;
-
 pub struct Operator {
-    mqtt_router: Router<MqttOutSender>,
-    broker_helper: BrokerHelper,
+    matcher: matcher::Matcher,
 }
 
 impl Operator {
-    pub fn new(broker_helper: BrokerHelper) -> Self {
+    pub fn new() -> Self {
         Operator {
-            mqtt_router: Router::new(),
-            broker_helper,
+            matcher: matcher::Matcher::new(),
         }
     }
 
     pub fn run(&mut self) {
-        self.mqtt_router.run(self.broker_helper.clone());
+        self.matcher.run();
     }
 
-    pub fn mqtt_helper(&self) -> helper::Helper<MqttOutSender> {
-        self.mqtt_router.helper()
+    pub fn matcher_helper(&self) -> helper::Helper {
+        self.matcher.helper()
     }
 }

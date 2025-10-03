@@ -4,16 +4,20 @@ use tokio::sync::mpsc;
 use crate::mqtt::QoS;
 use crate::mqtt::protocol::property::Property;
 
-use super::command::{OperatorCommand, OutSender};
+use super::command::OperatorCommand;
 use super::error::OperatorError;
-use super::out::mqtt::MqttOutSender;
+use super::sink::Sink;
 
 #[derive(Clone)]
-pub struct Helper<T: OutSender> {
-    pub operator_tx: mpsc::Sender<OperatorCommand<T>>,
+pub struct Helper {
+    operator_tx: mpsc::Sender<OperatorCommand>,
 }
 
-impl Helper<MqttOutSender> {
+impl Helper {
+    pub fn new(operator_tx: mpsc::Sender<OperatorCommand>) -> Self {
+        Helper { operator_tx }
+    }
+
     pub async fn subscribe(
         &self,
         client_id: String,
@@ -21,18 +25,18 @@ impl Helper<MqttOutSender> {
         topic: String,
         qos: QoS,
         no_local: bool,
-        store: bool,
-        sender: MqttOutSender,
-    ) -> Result<(), OperatorError<MqttOutSender>> {
+        persist: bool,
+        sink: Box<dyn Sink>,
+    ) -> Result<(), OperatorError> {
         self.operator_tx
-            .send(OperatorCommand::MqttSubscribe {
+            .send(OperatorCommand::Subscribe {
                 client_id,
                 share_group,
                 topic,
                 qos,
                 no_local,
-                store,
-                sender,
+                persist,
+                sink,
             })
             .await
             .map_err(Into::into)
@@ -43,9 +47,9 @@ impl Helper<MqttOutSender> {
         client_id: String,
         share_group: Option<String>,
         topic: String,
-    ) -> Result<(), OperatorError<MqttOutSender>> {
+    ) -> Result<(), OperatorError> {
         self.operator_tx
-            .send(OperatorCommand::MqttUnsubscribe {
+            .send(OperatorCommand::Unsubscribe {
                 client_id,
                 share_group,
                 topic,
@@ -54,12 +58,9 @@ impl Helper<MqttOutSender> {
             .map_err(Into::into)
     }
 
-    pub async fn remove_client(
-        &self,
-        client_id: String,
-    ) -> Result<(), OperatorError<MqttOutSender>> {
+    pub async fn remove_client(&self, client_id: String) -> Result<(), OperatorError> {
         self.operator_tx
-            .send(OperatorCommand::MqttRemoveClient { client_id })
+            .send(OperatorCommand::RemoveClient { client_id })
             .await
             .map_err(Into::into)
     }
@@ -73,9 +74,9 @@ impl Helper<MqttOutSender> {
         payload: Bytes,
         properties: Vec<Property>,
         expiry_at: Option<u64>,
-    ) -> Result<(), OperatorError<MqttOutSender>> {
+    ) -> Result<(), OperatorError> {
         self.operator_tx
-            .send(OperatorCommand::MqttPublish {
+            .send(OperatorCommand::Publish {
                 client_id,
                 retain,
                 qos,
@@ -84,13 +85,6 @@ impl Helper<MqttOutSender> {
                 properties,
                 expiry_at,
             })
-            .await
-            .map_err(Into::into)
-    }
-
-    pub async fn purge_expiry(&self) -> Result<(), OperatorError<MqttOutSender>> {
-        self.operator_tx
-            .send(OperatorCommand::MqttPurgeExpiry)
             .await
             .map_err(Into::into)
     }

@@ -33,7 +33,8 @@ impl BrokerHelper {
                 resp: resp_tx,
                 client_tx,
             })
-            .await?;
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
 
         let result = resp_rx.await?;
         if let BrokerAck::ConnAck(ack) = result {
@@ -55,7 +56,8 @@ impl BrokerHelper {
                 subscribe,
                 resp: resp_tx,
             })
-            .await?;
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
 
         let result = resp_rx.await?;
         if let BrokerAck::SubAck(ack) = result {
@@ -77,7 +79,8 @@ impl BrokerHelper {
                 unsubscribe,
                 resp: resp_tx,
             })
-            .await?;
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
 
         let result = resp_rx.await?;
         if let BrokerAck::UnsubAck(ack) = result {
@@ -94,7 +97,8 @@ impl BrokerHelper {
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
             .send(BrokerCommand::Disconnected(client_id.to_string(), code))
-            .await?;
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
         Ok(())
     }
 
@@ -116,9 +120,31 @@ impl BrokerHelper {
                 qos,
                 retain,
                 properties,
-                expire_at,
+                expiry_at: expire_at,
             })
-            .await?;
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
+        Ok(())
+    }
+
+    pub async fn retain_message(
+        &self,
+        topic: String,
+        qos: QoS,
+        payload: bytes::Bytes,
+        properties: Vec<Property>,
+        expiry_at: Option<u64>,
+    ) -> Result<(), MqttProtocolError> {
+        self.broker_tx
+            .send(BrokerCommand::RetainMessage {
+                topic,
+                qos,
+                payload,
+                properties,
+                expiry_at,
+            })
+            .await
+            .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
         Ok(())
     }
 

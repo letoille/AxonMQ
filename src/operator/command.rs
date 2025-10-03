@@ -2,38 +2,30 @@ use bytes::Bytes;
 
 use crate::mqtt::{QoS, protocol::property::Property};
 
-pub(crate) trait OutSender {
-    type Message;
-
-    fn send(
-        &self,
-        msg: Self::Message,
-    ) -> Result<(), tokio::sync::mpsc::error::TrySendError<Self::Message>>;
-}
+use super::sink::Sink;
 
 #[allow(dead_code)]
 pub(crate) enum OperatorAck {}
 
-pub(crate) enum OperatorCommand<T: OutSender> {
-    MqttSubscribe {
+pub(crate) enum OperatorCommand {
+    Subscribe {
         client_id: String,
         share_group: Option<String>,
         topic: String,
         qos: QoS,
         no_local: bool,
-        store: bool,
-        sender: T,
+        persist: bool,
+        sink: Box<dyn Sink>,
     },
-    MqttUnsubscribe {
+    Unsubscribe {
         client_id: String,
         share_group: Option<String>,
         topic: String,
     },
-    MqttRemoveClient {
+    RemoveClient {
         client_id: String,
     },
-    MqttPurgeExpiry,
-    MqttPublish {
+    Publish {
         client_id: String,
         retain: bool,
         qos: QoS,
