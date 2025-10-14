@@ -57,7 +57,7 @@ pub struct Broker {
 impl Broker {
     pub async fn new() -> Self {
         let (broker_tx, broker_rx) = mpsc::channel::<BrokerCommand>(128);
-        let operator = Operator::new();
+        let operator = Operator::new().await;
 
         Broker {
             operator: Some(operator),

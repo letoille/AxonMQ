@@ -1,0 +1,61 @@
+package axonmq:processor;
+
+interface handler {
+    enum qos {
+        at-most-once,
+        at-least-once,
+        exactly-once,
+    }
+
+    variant value {
+        v-string(string),
+        v-int(s64),
+        v-float(f64),
+        v-bool(bool),
+        v-binary(list<u8>),
+    }
+
+    record message {
+        client-id: string,
+        topic: string,
+        qos: qos,
+        retain: bool,
+        payload: list<u8>,
+        properties: list<tuple<string, string>>,
+        metadata: list<tuple<string, value>>,
+    }
+
+    variant message-result {
+        forward(message),
+        drop,
+    }
+
+    type processor-result = result<message-result, string>;
+
+    on-message: func(message: message) -> processor-result;
+
+    name: func() -> string;
+    version: func() -> string;
+    description: func() -> string;
+
+    set-instance-id: func(id: string);
+    set-config: func(config: string);
+}
+
+interface logging {
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    log: func(level: log-level, target: string, message: string);
+}
+
+world axonmq-processor {
+    export handler;
+
+    import logging;
+}

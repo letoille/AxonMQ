@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod message;
 pub mod processors;
+mod wasm;
 
 use std::any::Any;
 
@@ -14,7 +15,7 @@ pub trait Processor: Send + Sync + DynClone {
     fn id(&self) -> Uuid;
     fn as_any(&self) -> &dyn Any;
 
-    async fn process(
+    async fn on_message(
         &self,
         message: message::Message,
     ) -> Result<Option<message::Message>, error::ProcessorError>;

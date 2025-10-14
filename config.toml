@@ -62,7 +62,7 @@ client_id = "sensor_hub_001"
 chain = ["logger"]
 
 [[router]]
-topic = "#"
+topic = "chain/example"
 chain = ["logger"]
 
 # processing chains, define the sequence of processors to apply
@@ -72,7 +72,7 @@ chain = ["logger"]
 # if message through the chain is accepted and last processor returns message, it will be delivered to the client
 [[chain]]
 name = "logger"
-processors = ["10495c56-1922-414e-acfe-0bffafaa5d12"]
+processors = ["10495c56-1922-414e-acfe-0bffafaa5d12", "223e4567-e89b-12d3-a456-426614174000"]
 delivery = true                  # false or true, false means do not deliver to client, true means deliver to client if message is not dropped
 
 # processor modules, define the processors available for use in chains
@@ -81,3 +81,7 @@ delivery = true                  # false or true, false means do not deliver to 
 [[processor]]
 uuid = "10495c56-1922-414e-acfe-0bffafaa5d12"
 config = { type = "logger", level = "info" }
+
+[[processor]]
+uuid = "223e4567-e89b-12d3-a456-426614174000"
+config = { type = "wasm", path = "wasm/example.wasm", cfg = "{}" }

@@ -56,7 +56,7 @@ impl Processor for LoggerProcessor {
         self
     }
 
-    async fn process(&self, message: Message) -> Result<Option<Message>, ProcessorError> {
+    async fn on_message(&self, message: Message) -> Result<Option<Message>, ProcessorError> {
         match self.level.as_str() {
             "trace" => trace!(parent: &self.span, "{}", message),
             "debug" => debug!(parent: &self.span, "{}", message),

@@ -14,9 +14,9 @@ pub struct Operator {
 }
 
 impl Operator {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let matcher = matcher::Matcher::new();
-        let router = router::Router::new(matcher.sender());
+        let router = router::Router::new(matcher.sender()).await;
 
         Operator { matcher, router }
     }

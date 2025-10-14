@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use uuid;
 
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tracing::trace;
+use tracing::{info, trace};
+use wasmtime::Engine;
 
 use crate::CONFIG;
 use crate::processor::message::Message;
@@ -22,13 +24,35 @@ pub struct Router {
 
     trie: Option<TopicTrie<Chain>>,
     chains: HashMap<String, ProcessorChain>,
+
+    #[allow(dead_code)]
+    engine: Arc<Engine>,
 }
 
 impl Router {
-    pub fn new(matcher_sender: mpsc::Sender<OperatorCommand>) -> Self {
+    fn create_engine() -> Engine {
+        use wasmtime::{Cache, CacheConfig, Config};
+
+        let mut config = Config::new();
+        //config.async_support(true);
+        config.cranelift_opt_level(wasmtime::OptLevel::Speed);
+        config.wasm_component_model(true);
+
+        let mut cache_config = CacheConfig::new();
+        cache_config.with_cleanup_interval(std::time::Duration::from_secs(24 * 60 * 60)); // 1 day
+        cache_config.with_files_total_size_soft_limit(1024 * 1024 * 1024); // 1GB
+        cache_config.with_directory("./wasm_cache");
+        let cache = Cache::new(cache_config).ok();
+        config.cache(cache);
+
+        Engine::new(&config).unwrap_or(Engine::default())
+    }
+
+    pub async fn new(matcher_sender: mpsc::Sender<OperatorCommand>) -> Self {
         let (tx, rx) = mpsc::channel(1024);
         let mut chains = HashMap::new();
         let mut trie = TopicTrie::new();
+        let engine = Arc::new(Self::create_engine());
 
         let router_configs = &CONFIG.get().unwrap().router;
         for router in router_configs {
@@ -41,24 +65,28 @@ impl Router {
             trie.insert(&router.topic, chain);
         }
 
-        let processor = &CONFIG
-            .get()
-            .unwrap()
-            .processor
-            .iter()
-            .flat_map(|p| {
-                let uuid = uuid::Uuid::parse_str(&p.uuid).ok()?;
-                let processor = p.config.new_processor(uuid).ok()?;
-                Some((p.uuid.clone(), processor))
-            })
-            .collect::<HashMap<_, _>>();
+        let mut processor_map = HashMap::new();
+
+        for processor in &CONFIG.get().unwrap().processor {
+            if processor_map.contains_key(&processor.uuid) {
+                continue;
+            }
+
+            let uuid = uuid::Uuid::parse_str(&processor.uuid).unwrap();
+            let proc = processor
+                .config
+                .new_processor(uuid, engine.clone())
+                .await
+                .unwrap();
+            processor_map.insert(processor.uuid.clone(), proc);
+        }
 
         let chain_configs = &CONFIG.get().unwrap().chain;
         for chain in chain_configs {
             let processors = chain
                 .processors
                 .iter()
-                .filter_map(|name| processor.get(name).cloned())
+                .filter_map(|name| processor_map.get(name).cloned())
                 .map(Into::into)
                 .collect::<Vec<_>>();
             chains.insert(
@@ -77,6 +105,7 @@ impl Router {
             matcher_sender,
             trie: Some(trie),
             chains,
+            engine,
         }
     }
 
@@ -168,8 +197,14 @@ impl Router {
         for chain in chains {
             let mut msg = message.clone();
             set.spawn(async move {
+                info!("processing message with chain {}", chain.processors.len());
                 for processor in chain.processors {
-                    match processor.processor.process(msg).await {
+                    info!(
+                        "processing message with processor {} in chain {}",
+                        processor.processor.id(),
+                        chain.name
+                    );
+                    match processor.processor.on_message(msg).await {
                         Ok(Some(m)) => {
                             msg = m;
                         }
