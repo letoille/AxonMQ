@@ -1,11 +1,24 @@
+pub mod chain;
+pub mod processor;
+pub mod router;
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use toml;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    pub common: CommonConfig,
     pub node: NodeConfig,
     pub mqtt: MqttConfig,
+    pub router: Vec<router::Router>,
+    pub chain: Vec<chain::Chain>,
+    pub processor: Vec<processor::Processor>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommonConfig {
+    pub core_threads: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

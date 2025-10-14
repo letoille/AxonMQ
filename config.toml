@@ -1,3 +1,8 @@
+[common]
+# number of core threads for the async runtime, is recommended to be set double of CPU cores for I/O bound tasks
+# if not set, default is number of CPU cores
+#core_threads = 8
+
 [node]
 id = "001"
 
@@ -42,3 +47,37 @@ max_store_msgs_per_client = 128
 [mqtt.strategy]
 # strategy for shared subscription message delivery, "round_robin" or "random"
 shared_delivery = "round_robin"
+
+# router modules, define the processing chains for different topics or clients
+# topic is necessary, client_id is optional
+# if multiple routers match, the first one will be used
+# if no router matches, the message will be delivered to the client directly
+[[router]]
+topic = "sensors/+/temperature"
+chain = ["logger"]
+
+[[router]]
+topic = "sensors/+/humidity"
+client_id = "sensor_hub_001"
+chain = ["logger"]
+
+[[router]]
+topic = "#"
+chain = ["logger"]
+
+# processing chains, define the sequence of processors to apply
+# each chain must have a unique name
+# processors are identified by their UUIDs defined in the processor modules
+# if message is dropped by any processor or rejected by the chain, it will not be delivered to the client
+# if message through the chain is accepted and last processor returns message, it will be delivered to the client
+[[chain]]
+name = "logger"
+processors = ["10495c56-1922-414e-acfe-0bffafaa5d12"]
+delivery = true                  # false or true, false means do not deliver to client, true means deliver to client if message is not dropped
+
+# processor modules, define the processors available for use in chains
+# each processor must have a unique UUID
+# processor supports the native Rust Implementation and WebAssembly (WASM) implementation
+[[processor]]
+uuid = "10495c56-1922-414e-acfe-0bffafaa5d12"
+config = { type = "logger", level = "info" }

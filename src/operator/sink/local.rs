@@ -1,8 +1,8 @@
 use tokio::sync::mpsc::Sender;
 use tracing::warn;
 
-use crate::message::Message;
 use crate::mqtt::{command::ClientCommand, helper::BrokerHelper};
+use crate::processor::message::Message;
 
 use super::Sink;
 

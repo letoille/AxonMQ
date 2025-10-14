@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use coarsetime;
+use tokio::runtime::Builder;
 use tracing::Level;
 use tracing::{info, warn};
 use tracing_appender;
@@ -8,10 +9,9 @@ use tracing_subscriber::filter::Targets;
 use tracing_subscriber::{Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
-mod message;
 mod mqtt;
 mod operator;
-mod plugin;
+mod processor;
 mod utils;
 
 use crate::mqtt::{listener, server};
@@ -37,8 +37,7 @@ fn get_default_log_dir() -> &'static str {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cmd::parse();
 
     let config = config::Config::from_file(&cli.config_dir)?;
@@ -47,7 +46,8 @@ async fn main() -> Result<()> {
     let filter = Targets::new()
         .with_target("axonmq", Level::INFO)
         .with_target("axonmq::mqtt", Level::INFO)
-        .with_target("axonmq::operator::matcher", Level::INFO);
+        .with_target("axonmq::operator::matcher", Level::INFO)
+        .with_target("axonmq::processor::processors::logger", Level::TRACE);
 
     let file_appender = tracing_appender::rolling::daily(get_default_log_dir(), "axonmq.log");
     let (nb, _guard) = tracing_appender::non_blocking(file_appender);
@@ -68,54 +68,65 @@ async fn main() -> Result<()> {
     let config = CONFIG.get().unwrap();
     info!("Hello, AxonMQ: {}!", config.node.id);
 
-    coarsetime::Updater::new(100).start().unwrap();
+    let runtime = if let Some(core_threads) = config.common.core_threads {
+        Builder::new_multi_thread()
+            .worker_threads(core_threads)
+            .enable_all()
+            .build()?
+    } else {
+        Builder::new_multi_thread().enable_all().build()?
+    };
 
-    let mut broker = server::Broker::new().await;
-    let broker_helper = broker.get_helper();
-    let operator_helper = broker.operator_helper();
-    broker.run().await;
+    runtime.block_on(async {
+        coarsetime::Updater::new(100).start().unwrap();
 
-    let tcp_listener_config = &config.mqtt.listener.tcp;
-    listener::spawn_tcp_listener(
-        tcp_listener_config.host.clone(),
-        tcp_listener_config.port,
-        broker_helper.clone(),
-        operator_helper.clone(),
-    );
+        let mut broker = server::Broker::new().await;
+        let broker_helper = broker.get_helper();
+        let operator_helper = broker.operator_helper();
+        broker.run().await;
 
-    let tls_listener_config = &config.mqtt.listener.tcp_tls;
-    listener::spawn_tls_listener(
-        tls_listener_config.host.clone(),
-        tls_listener_config.port,
-        tls_listener_config.cert_path.clone(),
-        tls_listener_config.key_path.clone(),
-        broker_helper.clone(),
-        operator_helper.clone(),
-    );
+        let tcp_listener_config = &config.mqtt.listener.tcp;
+        listener::spawn_tcp_listener(
+            tcp_listener_config.host.clone(),
+            tcp_listener_config.port,
+            broker_helper.clone(),
+            operator_helper.clone(),
+        );
 
-    let ws_listener_config = &config.mqtt.listener.ws;
-    listener::spawn_ws_listener(
-        ws_listener_config.host.clone(),
-        ws_listener_config.port,
-        ws_listener_config.path.clone(),
-        broker_helper.clone(),
-        operator_helper.clone(),
-    );
+        let tls_listener_config = &config.mqtt.listener.tcp_tls;
+        listener::spawn_tls_listener(
+            tls_listener_config.host.clone(),
+            tls_listener_config.port,
+            tls_listener_config.cert_path.clone(),
+            tls_listener_config.key_path.clone(),
+            broker_helper.clone(),
+            operator_helper.clone(),
+        );
 
-    let wss_listener_config = &config.mqtt.listener.wss;
-    listener::spawn_wss_listener(
-        wss_listener_config.host.clone(),
-        wss_listener_config.port,
-        wss_listener_config.path.clone(),
-        wss_listener_config.cert_path.clone(),
-        wss_listener_config.key_path.clone(),
-        broker_helper.clone(),
-        operator_helper.clone(),
-    );
+        let ws_listener_config = &config.mqtt.listener.ws;
+        listener::spawn_ws_listener(
+            ws_listener_config.host.clone(),
+            ws_listener_config.port,
+            ws_listener_config.path.clone(),
+            broker_helper.clone(),
+            operator_helper.clone(),
+        );
 
-    info!("AxonMQ started. Press Ctrl+C to exit.");
-    tokio::signal::ctrl_c().await?;
-    warn!("AxonMQ shutting down.");
+        let wss_listener_config = &config.mqtt.listener.wss;
+        listener::spawn_wss_listener(
+            wss_listener_config.host.clone(),
+            wss_listener_config.port,
+            wss_listener_config.path.clone(),
+            wss_listener_config.cert_path.clone(),
+            wss_listener_config.key_path.clone(),
+            broker_helper.clone(),
+            operator_helper.clone(),
+        );
 
-    Ok(())
+        info!("AxonMQ started. Press Ctrl+C to exit.");
+        tokio::signal::ctrl_c().await?;
+        warn!("AxonMQ shutting down.");
+
+        Ok(())
+    })
 }

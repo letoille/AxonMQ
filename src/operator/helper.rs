@@ -10,12 +10,19 @@ use super::sink::Sink;
 
 #[derive(Clone)]
 pub struct Helper {
-    operator_tx: mpsc::Sender<OperatorCommand>,
+    matcher_tx: mpsc::Sender<OperatorCommand>,
+    router_tx: mpsc::Sender<OperatorCommand>,
 }
 
 impl Helper {
-    pub fn new(operator_tx: mpsc::Sender<OperatorCommand>) -> Self {
-        Helper { operator_tx }
+    pub fn new(
+        matcher_tx: mpsc::Sender<OperatorCommand>,
+        router_tx: mpsc::Sender<OperatorCommand>,
+    ) -> Self {
+        Helper {
+            matcher_tx,
+            router_tx,
+        }
     }
 
     pub async fn subscribe(
@@ -28,7 +35,7 @@ impl Helper {
         persist: bool,
         sink: Box<dyn Sink>,
     ) -> Result<(), OperatorError> {
-        self.operator_tx
+        self.matcher_tx
             .send(OperatorCommand::Subscribe {
                 client_id,
                 share_group,
@@ -39,7 +46,7 @@ impl Helper {
                 sink,
             })
             .await
-            .map_err(Into::into)
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
     }
 
     pub async fn unsubscribe(
@@ -48,21 +55,21 @@ impl Helper {
         share_group: Option<String>,
         topic: String,
     ) -> Result<(), OperatorError> {
-        self.operator_tx
+        self.matcher_tx
             .send(OperatorCommand::Unsubscribe {
                 client_id,
                 share_group,
                 topic,
             })
             .await
-            .map_err(Into::into)
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
     }
 
     pub async fn remove_client(&self, client_id: String) -> Result<(), OperatorError> {
-        self.operator_tx
+        self.matcher_tx
             .send(OperatorCommand::RemoveClient { client_id })
             .await
-            .map_err(Into::into)
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
     }
 
     pub async fn publish(
@@ -75,7 +82,7 @@ impl Helper {
         properties: Vec<Property>,
         expiry_at: Option<u64>,
     ) -> Result<(), OperatorError> {
-        self.operator_tx
+        self.router_tx
             .send(OperatorCommand::Publish {
                 client_id,
                 retain,
@@ -86,6 +93,6 @@ impl Helper {
                 expiry_at,
             })
             .await
-            .map_err(Into::into)
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
     }
 }

@@ -35,3 +35,28 @@ pub(crate) enum OperatorCommand {
         expiry_at: Option<u64>,
     },
 }
+
+impl std::fmt::Display for OperatorCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OperatorCommand::Subscribe {
+                client_id, topic, ..
+            } => {
+                write!(f, "Subscribe: client_id={}, topic={}", client_id, topic)
+            }
+            OperatorCommand::Unsubscribe {
+                client_id, topic, ..
+            } => {
+                write!(f, "Unsubscribe: client_id={}, topic={}", client_id, topic)
+            }
+            OperatorCommand::RemoveClient { client_id } => {
+                write!(f, "RemoveClient: client_id={}", client_id)
+            }
+            OperatorCommand::Publish {
+                client_id, topic, ..
+            } => {
+                write!(f, "Publish: client_id={}, topic={}", client_id, topic)
+            }
+        }
+    }
+}

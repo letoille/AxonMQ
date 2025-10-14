@@ -2,7 +2,7 @@ pub mod local;
 
 use dyn_clone::DynClone;
 
-use crate::message::Message;
+use crate::processor::message::Message;
 
 pub trait Sink: Send + Sync + DynClone {
     fn deliver(&self, message: Message, persist: bool);

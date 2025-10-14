@@ -5,12 +5,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::mpsc;
 use tracing::{debug, trace};
 
-use crate::message::Message;
 use crate::mqtt::QoS;
+use crate::processor::message::Message;
 use crate::utils as g_utils;
 
 use super::command::OperatorCommand;
-use super::helper::Helper;
 use super::sink::{DefaultSink, Sink};
 use super::trie::{ClientId, TopicTrie};
 use super::utils;
@@ -86,8 +85,8 @@ impl Matcher {
         }
     }
 
-    pub fn helper(&self) -> Helper {
-        Helper::new(self.command_tx.clone())
+    pub fn sender(&self) -> mpsc::Sender<OperatorCommand> {
+        self.command_tx.clone()
     }
 
     pub fn run(&mut self) {
