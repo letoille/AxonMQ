@@ -90,6 +90,11 @@ assets = [
         "lib/systemd/system/",
         "644",
     ],
+    [
+        "wasm/example.wasm",
+        "etc/axonmq/wasm/",
+        "644",
+    ],
 ]
 maintainer-scripts = ".github/package/"
 conf-files = [
@@ -106,6 +111,7 @@ assets = [
     { source = "certs/server.crt", dest = "/etc/axonmq/certs/server.crt", mode = "644", config = true },
     { source = "certs/server.key", dest = "/etc/axonmq/certs/server.key", mode = "644", config = true },
     { source = ".github/package/axonmq.service", dest = "/usr/lib/systemd/system/axonmq.service", mode = "644" },
+    { source = "wasm/example.wasm", dest = "/etc/axonmq/wasm/example.wasm", mode = "644" },
 ]
 post_install_script = """
 1 #!/bin/sh

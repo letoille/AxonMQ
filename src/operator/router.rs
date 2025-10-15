@@ -5,7 +5,7 @@ use uuid;
 
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tracing::{info, trace};
+use tracing::trace;
 use wasmtime::Engine;
 
 use crate::CONFIG;
@@ -23,6 +23,7 @@ pub struct Router {
     matcher_sender: mpsc::Sender<OperatorCommand>,
 
     trie: Option<TopicTrie<Chain>>,
+
     chains: HashMap<String, ProcessorChain>,
 
     #[allow(dead_code)]
@@ -117,6 +118,7 @@ impl Router {
         let mut command_rx = self.command_rx.take().unwrap();
         let matcher_sender = self.matcher_sender.clone();
         let mut trie = self.trie.take().unwrap();
+        let mut cache: HashMap<String, Vec<Chain>> = HashMap::new();
         let chains = self.chains.clone();
 
         tokio::spawn(async move {
@@ -124,7 +126,7 @@ impl Router {
                 tokio::select! {
                     Some(cmd) = command_rx.recv() => {
                         if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, properties, expiry_at} = cmd {
-                            let chains = Self::route(&mut trie, &chains, &topic, &client_id);
+                            let chains = Self::find_chain(&mut cache, &mut trie, &chains, &topic, &client_id);
                             if let Some(chains) = chains {
                                 let msg = Message::new(
                                     client_id.clone(),
@@ -157,6 +159,47 @@ impl Router {
         });
     }
 
+    fn find_chain<'a>(
+        cache: &'a mut HashMap<String, Vec<Chain>>,
+        trie: &'a mut TopicTrie<Chain>,
+        chains: &HashMap<String, ProcessorChain>,
+        topic: &str,
+        client_id: &str,
+    ) -> Option<Vec<ProcessorChain>> {
+        if !cache.contains_key(topic) {
+            let chain = trie
+                .find_matches(topic)
+                .into_iter()
+                .map(|c| c.clone())
+                .collect();
+            cache.insert(topic.to_string(), chain);
+        }
+
+        let find_chains = cache.get(topic).unwrap();
+        let chains_name = find_chains
+            .iter()
+            .filter(|chain| {
+                if let Some(ref cid) = chain.client_id {
+                    cid == client_id
+                } else {
+                    true
+                }
+            })
+            .flat_map(|chain| chain.chains.clone())
+            .collect::<Vec<_>>();
+
+        let chains = chains_name
+            .iter()
+            .filter_map(|name| chains.get(name).cloned())
+            .collect::<Vec<_>>();
+        if chains.is_empty() {
+            None
+        } else {
+            Some(chains)
+        }
+    }
+
+    #[allow(dead_code)]
     fn route(
         trie: &mut TopicTrie<Chain>,
         chains: &HashMap<String, ProcessorChain>,
@@ -197,9 +240,8 @@ impl Router {
         for chain in chains {
             let mut msg = message.clone();
             set.spawn(async move {
-                info!("processing message with chain {}", chain.processors.len());
                 for processor in chain.processors {
-                    info!(
+                    trace!(
                         "processing message with processor {} in chain {}",
                         processor.processor.id(),
                         chain.name

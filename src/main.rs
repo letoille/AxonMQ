@@ -47,7 +47,7 @@ fn main() -> Result<()> {
         .with_target("axonmq", Level::INFO)
         .with_target("axonmq::mqtt", Level::INFO)
         .with_target("axonmq::operator::matcher", Level::INFO)
-        .with_target("axonmq::processor::processors::logger", Level::TRACE);
+        .with_target("axonmq::processor::processors::logger", Level::INFO);
 
     let file_appender = tracing_appender::rolling::daily(get_default_log_dir(), "axonmq.log");
     let (nb, _guard) = tracing_appender::non_blocking(file_appender);

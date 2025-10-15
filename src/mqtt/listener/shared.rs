@@ -5,7 +5,7 @@ use futures_util::{SinkExt, stream::StreamExt as _};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{sync::mpsc, time};
 use tokio_util::codec::Framed;
-use tracing::{Instrument, debug};
+use tracing::{Instrument, debug, warn};
 
 use crate::CONFIG;
 use crate::operator::helper::Helper as OperatorHelper;
@@ -157,14 +157,18 @@ pub async fn process_client<S>(
             }
             msg = async_client.framed.next() => {
                 if msg.is_none() || msg.as_ref().unwrap().is_err() {
-                    debug!(parent: &span, "disconnected");
+                    if msg.is_some() && msg.as_ref().unwrap().is_err() {
+                        warn!(parent: &span, "error reading message: {:?}", msg.unwrap().err());
+                    } else {
+                        warn!(parent: &span, "disconnected, message is none");
+                    }
                     broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
                     async_client.framed.close().await.ok();
                     break;
                 }
                 let msg = msg.unwrap().unwrap();
                 if let Message::PacketTooLarge = msg {
-                    debug!(parent: &span, "packet too large, disconnecting");
+                    warn!(parent: &span, "packet too large, disconnecting");
                     async_client.framed.send(Message::Disconnect(Disconnect::new(ReturnCode::PacketTooLarge))).await.ok();
                     broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge).await.ok();
                     async_client.framed.close().await.ok();
@@ -178,7 +182,7 @@ pub async fn process_client<S>(
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        debug!(parent: &span, "error handling message: {}", e);
+                        warn!(parent: &span, "error handling message: {}", e);
                         if let MqttProtocolError::Disconnected(code) = e {
                             broker_helper.disconnected(client_id.as_str(), code).await.ok();
                         } else {

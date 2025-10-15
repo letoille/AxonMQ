@@ -11,8 +11,36 @@
 - **多協定支援**: 支援基於 TCP、TLS、WebSocket (WS) 和 Secure WebSocket (WSS) 的 MQTT v3.1.1 和 v5.0。
 - **高效能**: 基於 Tokio 建構，充分利用 Rust 的高效能和安全特性，實現低延遲、高吞吐量的訊息傳遞。
 - **輕量級**：資源佔用極低，僅需 5MB 記憶體即可啟動。以環保為目標，旨在消耗更少的資源、更少的電量，並排放更少的二氧化碳。
+- **可擴展的處理管道**: 透過強大的處理器鏈自訂資料流，允許過濾、修改和整合。支援透過 WASM 實現自訂處理器。
 - **可設定**: 透過簡單的 `config.toml` 檔案輕鬆設定接聽器、TLS 設定及其他參數。
 - **跨平台**: 可在包括 Linux、macOS 和 Windows 在內的主流平台上編譯和執行。
+
+## 架構
+
+### 訊息流
+
+下圖說明了 AxonMQ 內部的高層訊息流：
+
+```mermaid
+graph TD
+    A[Client] -- Publish --> B{Router};
+
+    subgraph AxonMQ Internal Flow
+        direction LR
+        B -- 原始訊息 --> D{Subscription Matcher};
+        B -- 路由到處理器鏈 --> C(Processor Chains);
+        C -- 處理後的訊息 (如果 delivery=true) --> D;
+        D -- 分發 --> E[Subscribed Clients];
+    end
+```
+
+1.  客戶端發佈一條訊息。
+2.  訊息進入 **Router** (路由器)。
+3.  路由器分派訊息：
+    -   原始訊息流向 **Subscription Matcher** (訂閱匹配器) 以進行標準投遞。
+    -   一個副本被發送到匹配的 **Processor Chains** (處理器鏈) 進行自訂處理。
+4.  如果處理器鏈被配置為 `delivery = true`，那麼從鏈中出來的訊息（可能已被修改）也**同樣會**被送往 **Subscription Matcher**。
+5.  匹配器找到所有訂閱相應主題的客戶端，並將相應的訊息分派給它們。
 
 ### 💎 支援的 MQTT 特性
 
@@ -27,6 +55,13 @@
 | 持久性會話 (Persistent)  |   ✔️    | 針對 `clean_start = false`          |
 | 共享訂閱 (Shared)        |   ✔️    | MQTT v5 特性 (`$share/...`)         |
 | 訊息過期 (Expiry)        |   ✔️    | MQTT v5 特性                        |
+
+### 📚 文件
+
+有關架構和進階功能的詳細資訊，請參閱我們的官方文件：
+
+- **[路由指南](./docs/router.md)**: 了解如何設定路由規則。
+- **[處理器指南](./docs/processor.md)**: 了解如何使用原生 Rust 或 WebAssembly (WASM) 擴展資料管道。
 
 ### 🚀 快速入門
 
@@ -88,7 +123,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -da
 - **進階認證機制**：支援客戶端憑證認證、LDAP、OAuth/JWT 及其他外部認證機制。
 - **代理橋接/聯邦**：允許連接多個 AxonMQ 實例或橋接到其他 MQTT 代理，以實現分散式部署。
 - **指標與監控整合**：提供全面的指標，以便與 Prometheus 和 Grafana 等監控工具整合。
-- **可插拔架構**：開發一個插件系統，允許使用者透過自訂模組擴展代理功能，例如資料處理、與各種資料庫整合，或將訊息轉發到 Kafka 等平台。
+- **增強的可插拔架構**: 在當前資料處理器能力的基礎上進一步發展插件系統，以支援資料橋接、資料儲存、自訂身份驗證等更多擴展點。
 - **MQTT-SN 支援**：增加對 MQTT-SN 協定的支援，適用於資源受限的物聯網設備。
 
 ### 🤝 貢獻

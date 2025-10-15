@@ -13,8 +13,36 @@ AxonMQ 是一个用 Rust 构建的轻量级、高性能 MQTT 代理，旨在实�
 - **多协议支持**：通过 TCP、TLS、WebSocket (WS) 和 Secure WebSocket (WSS) 支持 MQTT v3.1.1 和 v5.0。
 - **高性能**：基于 Tokio 构建，利用 Rust 的性能和安全特性，实现低延迟、高吞吐量的消息传递。
 - **轻量级**：资源占用极低，仅需 5MB 内存即可启动。以环保为目标，旨在消耗更少的资源、更少的电量，并排放更少的二氧化碳。
+- **可扩展的处理管道**: 通过强大的处理器链自定义数据流，允许过滤、修改和集成。支持通过 WASM 实现自定义处理器。
 - **可配置**：通过简单的 `config.toml` 文件轻松配置监听器、TLS 设置及其他参数。
 - **跨平台**：可在包括 Linux、macOS 和 Windows 在内的主流平台上编译和运行。
+
+## 架构
+
+### 消息流
+
+下图说明了 AxonMQ 内部的高层消息流：
+
+```mermaid
+graph TD
+    A[Client] -- Publish --> B{Router};
+
+    subgraph AxonMQ Internal Flow
+        direction LR
+        B -- 原始消息 --> D{Subscription Matcher};
+        B -- 路由到处理器链 --> C(Processor Chains);
+        C -- 处理后的消息 (如果 delivery=true) --> D;
+        D -- 分发 --> E[Subscribed Clients];
+    end
+```
+
+1.  客户端发布一条消息。
+2.  消息进入 **Router** (路由器)。
+3.  路由器分派消息：
+    -   原始消息流向 **Subscription Matcher** (订阅匹配器) 以进行标准投递。
+    -   一个副本被发送到匹配的 **Processor Chains** (处理器链) 进行自定义处理。
+4.  如果处理器链被配置为 `delivery = true`，那么从链中出来的消息（可能已被修改）也**同样会**被送往 **Subscription Matcher**。
+5.  匹配器找到所有订阅相应主题的客户端，并将相应的消息分派给它们。
 
 ### 💎 支持的 MQTT 特性
 
@@ -29,6 +57,13 @@ AxonMQ 是一个用 Rust 构建的轻量级、高性能 MQTT 代理，旨在实�
 | 持久性会话 (Persistent)  |   ✔️    | 针对 `clean_start = false`          |
 | 共享订阅 (Shared)        |   ✔️    | MQTT v5 特性 (`$share/...`)         |
 | 消息过期 (Expiry)        |   ✔️    | MQTT v5 特性                        |
+
+### 📚 文档
+
+有关架构和高级功能的详细信息，请参阅我们的官方文档：
+
+- **[路由指南](./docs/router.md)**: 了解如何配置路由规则。
+- **[处理器指南](./docs/processor.md)**: 了解如何使用原生 Rust 或 WebAssembly (WASM) 扩展数据管道。
 
 ### 🚀 快速入门
 
@@ -91,7 +126,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -da
 - **高级认证机制**：支持客户端证书认证、LDAP、OAuth/JWT 及其他外部认证机制。
 - **代理桥接/联邦**：允许连接多个 AxonMQ 实例或桥接到其他 MQTT 代理，以实现分布式部署。
 - **指标与监控集成**：提供全面的指标，以便与 Prometheus 和 Grafana 等监控工具集成。
-- **可插拔架构**：开发一个插件系统，允许用户通过自定义模块扩展代理功能，例如数据处理、与各种数据库整合，或将消息转发到 Kafka 等平台。
+- **增强的可插拔架构**: 在当前数据处理器能力的基础上进一步发展插件系统，以支持数据桥接、数据存储、自定义身份验证等更多扩展点。
 - **MQTT-SN 支持**：增加对 MQTT-SN 协议的支援，适用于资源受限的物联网设备。
 
 ### 🤝 贡献

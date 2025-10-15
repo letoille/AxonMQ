@@ -4,13 +4,20 @@ use serde::Deserialize;
 use uuid::Uuid;
 use wasmtime::Engine;
 
-use super::{Processor, processors::logger, wasm::WasmProcessor};
+use super::{Processor, processors::{logger, republish}, wasm::WasmProcessor};
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum ProcessorConfig {
     #[serde(rename = "logger")]
     Logger { level: String },
+    #[serde(rename = "republish")]
+    Republish {
+        topic: String,
+        qos: Option<u8>,
+        retain: Option<bool>,
+        payload: Option<String>,
+    },
     #[serde(rename = "wasm")]
     Wasm { path: String, cfg: String },
     #[serde(other)]
@@ -26,6 +33,9 @@ impl ProcessorConfig {
         match self {
             ProcessorConfig::Logger { .. } => {
                 logger::LoggerProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
+            }
+            ProcessorConfig::Republish { .. } => {
+                republish::RepublishProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
             }
             ProcessorConfig::Wasm { path, cfg } => {
                 WasmProcessor::new(engine, path.clone(), id, cfg.to_string())

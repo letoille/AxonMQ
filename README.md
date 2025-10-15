@@ -11,8 +11,36 @@ A lightweight, high-performance MQTT broker built in Rust, designed for reliabil
 - **Multi-Protocol Support**: MQTT v3.1.1 and v5.0 over TCP, TLS, WebSocket (WS), and Secure WebSocket (WSS).
 - **High Performance**: Built on Tokio, leveraging Rust's performance and safety features for low-latency, high-throughput message delivery.
 - **Lightweight**: Minimal resource footprint, capable of starting with as little as 5MB of memory. Designed with environmental goals in mind, it aims to use fewer resources, consume less power, and emit less CO2.
+- **Extensible Processing Pipeline**: Customize data flows with a powerful processor chain, allowing for filtering, modification, and integration. Supports custom processors via WASM.
 - **Configurable**: Easily configure listeners, TLS settings, and other parameters via a simple `config.toml` file.
 - **Cross-Platform**: Compiles and runs on major platforms including Linux, macOS, and Windows.
+
+## Architecture
+
+### Message Flow
+
+The following diagram illustrates the high-level message flow within AxonMQ:
+
+```mermaid
+graph TD
+    A[Client] -- Publish --> B{Router};
+
+    subgraph AxonMQ Internal Flow
+        direction LR
+        B -- Original Message --> D{Subscription Matcher};
+        B -- Route to Chains --> C(Processor Chains);
+        C -- Processed Message (if delivery=true) --> D;
+        D -- Dispatch --> E[Subscribed Clients];
+    end
+```
+
+1.  A client publishes a message.
+2.  The message enters the **Router**.
+3.  The Router dispatches the message:
+    -   The original message proceeds to the **Subscription Matcher** for standard delivery.
+    -   A copy is sent to any matching **Processor Chains** for custom processing.
+4.  If a Processor Chain is configured with `delivery = true`, the message that exits the chain (which could be modified) is **also** sent to the **Subscription Matcher**.
+5.  The Matcher finds all subscribed clients and dispatches the appropriate messages to them.
 
 ### 💎 Supported MQTT Features
 
@@ -27,6 +55,13 @@ A lightweight, high-performance MQTT broker built in Rust, designed for reliabil
 | Persistent Sessions      |    ✔️    | For `clean_start = false`           |
 | Shared Subscriptions     |    ✔️    | MQTT v5 feature (`$share/...`)      |
 | Message Expiry           |    ✔️    | MQTT v5 feature                     |
+
+### 📚 Documentation
+
+For detailed information about the architecture and advanced features, please refer to our official documentation:
+
+- **[Router Guide](./docs/router.md)**: Learn how to configure routing rules.
+- **[Processor Guide](./docs/processor.md)**: Extend the data pipeline with native Rust or WebAssembly (WASM) processors.
 
 ### 🚀 Getting Started
 
@@ -87,7 +122,7 @@ We are continuously working to enhance AxonMQ. Here are some key features planne
 - **Advanced Authentication**: Support for client certificate authentication, LDAP, OAuth/JWT, and other external authentication mechanisms.
 - **Broker Bridging/Federation**: Allow connecting multiple AxonMQ instances or bridging to other MQTT brokers for distributed deployments.
 - **Metrics & Monitoring Integration**: Provide comprehensive metrics for integration with monitoring tools like Prometheus and Grafana.
-- **Pluggable Architecture**: Develop a plugin system to allow users to extend broker functionality with custom modules, such as data processing, integration with various databases, or forwarding messages to platforms like Kafka.
+- **Enhanced Pluggable Architecture**: Further develop the plugin system beyond the current data processor capabilities to support more extension points, such as data bridging, data storage, and custom authentication.
 - **MQTT-SN Support**: Add support for MQTT-SN protocol for constrained IoT devices.
 
 ### 🤝 Contributing

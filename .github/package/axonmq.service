@@ -1,6 +1,6 @@
 [Unit]
 Description=AxonMQ MQTT Broker
-Documentation=https://github.com/letoille/AxonMQ
+Documentation=https://github.com/letoille/AxonMQ/tree/main/docs
 After=network.target
 
 [Service]

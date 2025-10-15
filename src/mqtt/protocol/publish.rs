@@ -3,7 +3,7 @@ use std::io::{Cursor, Read};
 use byteorder::{BigEndian, ReadBytesExt as _};
 use bytes::{BufMut, Bytes, BytesMut};
 
-use super::super::{code::ReturnCode, error::MqttProtocolError, MqttProtocolVersion, QoS};
+use super::super::{MqttProtocolVersion, QoS, code::ReturnCode, error::MqttProtocolError};
 use super::{message::Message, property::Property};
 
 #[derive(Clone)]
@@ -172,7 +172,7 @@ impl PubAck {
         let reason_code = ReturnCode::try_from(reason_code)?;
 
         let mut properties = vec![];
-        let properties_len = rdr.read_u8()?;
+        let properties_len = rdr.read_u8().unwrap_or(0);
         if properties_len > 0 {
             properties = Property::try_from_properties(rdr)?;
         }
@@ -202,7 +202,7 @@ impl PubAck {
 
         let mut properties = vec![];
         if reason_code != ReturnCode::Success {
-            let properties_len = rdr.read_u8()?;
+            let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
                 properties = Property::try_from_properties(rdr)?;
             }
@@ -233,7 +233,7 @@ impl PubAck {
 
         let mut properties = vec![];
         if reason_code != ReturnCode::Success {
-            let properties_len = rdr.read_u8()?;
+            let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
                 properties = Property::try_from_properties(rdr)?;
             }
@@ -282,7 +282,7 @@ impl PubAck {
 
         let mut properties = vec![];
         if reason_code != ReturnCode::Success {
-            let properties_len = rdr.read_u8()?;
+            let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
                 properties = Property::try_from_properties(rdr)?;
             }

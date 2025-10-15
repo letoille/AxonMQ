@@ -50,7 +50,7 @@ shared_delivery = "round_robin"
 
 # router modules, define the processing chains for different topics or clients
 # topic is necessary, client_id is optional
-# if multiple routers match, the first one will be used
+# if multiple routers match, all matching routers will be applied in order of definition
 # if no router matches, the message will be delivered to the client directly
 [[router]]
 topic = "sensors/+/temperature"
@@ -63,6 +63,10 @@ chain = ["logger"]
 
 [[router]]
 topic = "chain/example"
+chain = ["logger"]
+
+[[router]]
+topic = "chain/+"
 chain = ["logger"]
 
 # processing chains, define the sequence of processors to apply
@@ -85,3 +89,22 @@ config = { type = "logger", level = "info" }
 [[processor]]
 uuid = "223e4567-e89b-12d3-a456-426614174000"
 config = { type = "wasm", path = "wasm/example.wasm", cfg = "{}" }
+
+
+# --- Republish Processor Example ---
+# The following example demonstrates how to use the republish processor.
+# It captures all messages from "raw/data/#", and republishes them
+# to a new topic "processed/data" with a fixed QoS of 1.
+
+[[router]]
+topic = "raw/data/#"
+chain = ["republish_chain"]
+
+[[chain]]
+name = "republish_chain"
+processors = ["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"] # This UUID must match the processor below
+delivery = true # Ensures the modified message is sent to the matcher for publishing
+
+[[processor]]
+uuid = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+config = { type = "republish", topic = "processed/data", qos = 1 }

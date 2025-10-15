@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use toml;
 
+use crate::processor::config::ProcessorConfig;
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub common: CommonConfig,
@@ -107,6 +109,16 @@ impl Config {
             .to_str()
             .unwrap()
             .to_string();
+
+        raw.processor.iter_mut().for_each(|p| {
+            if let ProcessorConfig::Wasm { path, .. } = &mut p.config {
+                *path = std::path::Path::new(dir)
+                    .join(path.as_str())
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+            }
+        });
 
         Ok(raw)
     }
