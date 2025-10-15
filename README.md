@@ -10,7 +10,7 @@ A lightweight, high-performance MQTT broker built in Rust, designed for reliabil
 
 - **Multi-Protocol Support**: MQTT v3.1.1 and v5.0 over TCP, TLS, WebSocket (WS), and Secure WebSocket (WSS).
 - **High Performance**: Built on Tokio, leveraging Rust's performance and safety features for low-latency, high-throughput message delivery.
-- **Lightweight**: Minimal resource footprint, capable of starting with as little as 5MB of memory. Designed with environmental goals in mind, it aims to use fewer resources, consume less power, and emit less CO2.
+- **Lightweight**: Minimal resource footprint, capable of starting with as little as 20MB of memory. Designed with environmental goals in mind, it aims to use fewer resources, consume less power, and emit less CO2.
 - **Extensible Processing Pipeline**: Customize data flows with a powerful processor chain, allowing for filtering, modification, and integration. Supports custom processors via WASM.
 - **Configurable**: Easily configure listeners, TLS settings, and other parameters via a simple `config.toml` file.
 - **Cross-Platform**: Compiles and runs on major platforms including Linux, macOS, and Windows.
