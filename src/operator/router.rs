@@ -138,7 +138,7 @@ impl Router {
                                     properties.clone(),
                                 );
 
-                                Self::chains_process(chains, msg, matcher_sender.clone()).await;
+                                tokio::spawn( Self::chains_process(chains, msg, matcher_sender.clone()));
                             } else {
                                 matcher_sender.send(OperatorCommand::Publish {
                                     client_id,
