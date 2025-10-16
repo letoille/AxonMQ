@@ -57,7 +57,7 @@ impl WasiView for WasmProcessorState {
 use axonmq::processor::logging;
 
 impl logging::Host for WasmProcessorState {
-    #[instrument(skip(self, message, level, target), fields(id=%self.uuid, name=%target))]
+    #[instrument(name="on_message", skip(self, message, level, target), fields(id=%self.uuid, name=%target))]
     fn log(&mut self, level: logging::LogLevel, target: String, message: String) -> () {
         match level {
             logging::LogLevel::Trace => {

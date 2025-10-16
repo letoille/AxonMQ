@@ -12,6 +12,7 @@ mod config;
 mod mqtt;
 mod operator;
 mod processor;
+mod service;
 mod utils;
 
 use crate::mqtt::{listener, server};

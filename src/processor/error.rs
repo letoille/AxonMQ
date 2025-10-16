@@ -11,4 +11,6 @@ pub enum ProcessorError {
     WasmError(#[from] anyhow::Error),
     #[error("Processor error: {0}")]
     ProcessorError(String),
+    #[error("Template error: {0}")]
+    TemplateError(String),
 }

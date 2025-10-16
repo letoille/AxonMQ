@@ -1,10 +1,15 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Deserialize;
 use uuid::Uuid;
 use wasmtime::Engine;
 
-use super::{Processor, processors::{logger, republish}, wasm::WasmProcessor};
+use super::{
+    Processor,
+    processors::{logger, republish, webhook},
+    wasm::WasmProcessor,
+};
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")]
@@ -17,6 +22,15 @@ pub enum ProcessorConfig {
         qos: Option<u8>,
         retain: Option<bool>,
         payload: Option<String>,
+    },
+    #[serde(rename = "webhook")]
+    WebHook {
+        url: String,
+        method: Option<String>,
+        headers: HashMap<String, String>,
+        body_template: Option<String>,
+        timeout_ms: Option<u64>,
+        max_concurrency: Option<usize>,
     },
     #[serde(rename = "wasm")]
     Wasm { path: String, cfg: String },
@@ -35,7 +49,11 @@ impl ProcessorConfig {
                 logger::LoggerProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
             }
             ProcessorConfig::Republish { .. } => {
-                republish::RepublishProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
+                republish::RepublishProcessor::new_with_id(id, self.clone())
+                    .map_err(|e| e.to_string())
+            }
+            ProcessorConfig::WebHook { .. } => {
+                webhook::WebhookProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
             }
             ProcessorConfig::Wasm { path, cfg } => {
                 WasmProcessor::new(engine, path.clone(), id, cfg.to_string())

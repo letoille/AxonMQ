@@ -34,6 +34,7 @@ AxonMQ comes with some processors that can be used out-of-the-box.
 | :--- | :--- | :--- |
 | **logger** | Logs received messages to the console. The log level (`info`, `debug`, etc.) is configurable. | `src/processor/processors/logger.rs` |
 | **republish** | Forwards the message to a new topic. Can also be used to override the QoS, retain flag, and payload. | `src/processor/processors/republish.rs` |
+| **webhook** | Sends message data to an external HTTP endpoint. See the **[detailed guide](./processor/webhook.md)**. | `src/processor/processors/webhook.rs` |
 
 ### WebAssembly (WASM) Processors
 

@@ -160,7 +160,7 @@ pub async fn process_client<S>(
                     if msg.is_some() && msg.as_ref().unwrap().is_err() {
                         warn!(parent: &span, "error reading message: {:?}", msg.unwrap().err());
                     } else {
-                        warn!(parent: &span, "disconnected, message is none");
+                        warn!(parent: &span, "disconnected");
                     }
                     broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
                     async_client.framed.close().await.ok();

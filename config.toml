@@ -108,3 +108,22 @@ delivery = true # Ensures the modified message is sent to the matcher for publis
 [[processor]]
 uuid = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 config = { type = "republish", topic = "processed/data", qos = 1 }
+
+
+# --- Webhook Processor Example ---
+# The following example demonstrates how to use the webhook processor.
+# It captures all messages from "webhook/#", and sends them to a specified HTTP endpoint.
+# Use https://webhook.site to generate a test URL for receiving the webhook requests.
+
+[[router]]
+topic = "webhook/#"
+chain = ["webhook_chain"]
+
+[[chain]]
+name = "webhook_chain"
+processors = ["b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12"]
+delivery = true
+
+[[processor]]
+uuid = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12"
+config = { type = "webhook", url = "https://webhook.site/9e55311f-a3fd-4459-999f-675a8dfc31ac", method = "POST", headers = { "Content-Type" = "application/json" }, body_template = '''{ "topic": "{{ topic }}", "client_id": "{{ client_id }}", "payload_as_json": {{ payload }}, "payload_as_string": "{{ raw_payload }}" }, "time": "{{ payload.time }}"''' }

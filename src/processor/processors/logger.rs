@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use async_trait::async_trait;
-use tracing::{Span, debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 use uuid::Uuid;
 
 use super::super::{Processor, config::ProcessorConfig, error::ProcessorError, message::Message};
@@ -10,7 +10,6 @@ use super::super::{Processor, config::ProcessorConfig, error::ProcessorError, me
 pub struct LoggerProcessor {
     id: Uuid,
     level: String,
-    span: Span,
 }
 
 impl LoggerProcessor {
@@ -19,19 +18,7 @@ impl LoggerProcessor {
         config: ProcessorConfig,
     ) -> Result<Box<dyn Processor>, ProcessorError> {
         if let ProcessorConfig::Logger { level } = config {
-            let span = match level.as_str() {
-                "trace" => tracing::trace_span!("Logger", id = %id),
-                "debug" => tracing::debug_span!("Logger", id = %id),
-                "info" => tracing::info_span!("Logger", id = %id),
-                "warn" => tracing::warn_span!("Logger", id = %id),
-                "error" => tracing::error_span!("Logger", id = %id),
-                _ => {
-                    return Err(ProcessorError::InvalidConfiguration(
-                        "Invalid log level".to_string(),
-                    ));
-                }
-            };
-            Ok(Box::new(LoggerProcessor { id, level, span }))
+            Ok(Box::new(LoggerProcessor { id, level }))
         } else {
             Err(ProcessorError::InvalidConfiguration(
                 "Invalid configuration for LoggerProcessor".to_string(),
@@ -56,13 +43,14 @@ impl Processor for LoggerProcessor {
         self
     }
 
+    #[instrument(skip(self, message), fields(id = %self.id))]
     async fn on_message(&self, message: Message) -> Result<Option<Message>, ProcessorError> {
         match self.level.as_str() {
-            "trace" => trace!(parent: &self.span, "{}", message),
-            "debug" => debug!(parent: &self.span, "{}", message),
-            "info" => info!(parent: &self.span, "{}", message),
-            "warn" => warn!(parent: &self.span, "{}", message),
-            "error" => error!(parent: &self.span, "{}", message),
+            "trace" => trace!("{}", message),
+            "debug" => debug!("{}", message),
+            "info" => info!("{}", message),
+            "warn" => warn!("{}", message),
+            "error" => error!("{}", message),
             _ => unreachable!("Invalid log level"),
         };
         Ok(Some(message))
