@@ -107,7 +107,7 @@ delivery = true # Ensures the modified message is sent to the matcher for publis
 
 [[processor]]
 uuid = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-config = { type = "republish", topic = "processed/data", qos = 1 }
+config = { type = "republish", topic = "processed/data/{{ client_id }}", qos = 1 }
 
 
 # --- Webhook Processor Example ---
@@ -127,3 +127,38 @@ delivery = true
 [[processor]]
 uuid = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12"
 config = { type = "webhook", url = "https://webhook.site/9e55311f-a3fd-4459-999f-675a8dfc31ac", method = "POST", headers = { "Content-Type" = "application/json" }, body_template = '''{ "topic": "{{ topic }}", "client_id": "{{ client_id }}", "payload_as_json": {{ payload }}, "payload_as_string": "{{ raw_payload }}" }, "time": "{{ payload.time }}"''' }
+
+
+# --- JsonTransform Processor Example ---
+# The following example demonstrates how to chain processors.
+# 1. It captures messages from "raw/json/#".
+# 2. A `json-transform` processor reshapes the JSON payload.
+# 3. A `republish` processor takes the modified message and publishes it to "processed/json/{{ client_id }}".
+
+[[router]]
+topic = "raw/json/#"
+chain = ["transform_and_republish_chain"]
+
+[[chain]]
+name = "transform_and_republish_chain"
+processors = [
+"f47ac10b-58cc-4372-a567-0e02b2c3d479", # UUID for the transformer
+"98a34e3d-ff2d-4dc9-a52b-34a5c2c3d480"  # UUID for the republisher
+]
+delivery = true
+
+[[processor]]
+uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+config = { type = "json_transform", template = '''
+{
+"device": "{{ client_id }}",
+"original_topic": "{{ topic }}",
+"data": {{ payload }},
+"processed_at": "{{ now() | date("%Y-%m-%d %H:%M:%S %z") }}"
+"processed_at1": "{{ now() }}"
+}
+'''}
+
+[[processor]]
+uuid = "98a34e3d-ff2d-4dc9-a52b-34a5c2c3d480"
+config = { type = "republish", topic = "processed/json/{{ client_id }}" }

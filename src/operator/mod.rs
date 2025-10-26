@@ -1,6 +1,7 @@
 mod chain;
 mod command;
 pub mod error;
+mod filter;
 pub mod helper;
 mod matcher;
 mod router;

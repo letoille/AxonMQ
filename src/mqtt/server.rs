@@ -93,7 +93,7 @@ impl Broker {
                     will.retain,
                     Property::filter_for_publish(will.properties),
                     will.expiry_interval
-                        .map(|v| coarsetime::Instant::now().elapsed().as_secs() + v as u64),
+                        .map(|v| coarsetime::Clock::now_since_epoch().as_secs() + v as u64),
                 )
                 .await
                 .ok();

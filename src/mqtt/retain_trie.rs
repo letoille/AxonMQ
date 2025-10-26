@@ -157,7 +157,7 @@ impl RetainedTrie {
         let expired_topics: Vec<String> = self
             .expiry_index
             .iter()
-            .take_while(|(expiry, _)| *expiry <= coarsetime::Instant::now().elapsed().as_secs())
+            .take_while(|(expiry, _)| *expiry <= coarsetime::Clock::now_since_epoch().as_secs())
             .map(|(_, topic)| topic.clone())
             .collect();
 

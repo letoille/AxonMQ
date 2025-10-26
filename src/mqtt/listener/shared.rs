@@ -5,7 +5,7 @@ use futures_util::{SinkExt, stream::StreamExt as _};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{sync::mpsc, time};
 use tokio_util::codec::Framed;
-use tracing::{Instrument, debug, warn};
+use tracing::{Instrument, debug, info, warn};
 
 use crate::CONFIG;
 use crate::operator::helper::Helper as OperatorHelper;
@@ -84,7 +84,7 @@ pub async fn process_client<S>(
                     .send(Message::ConnAck(ack))
                     .await
                     .ok();
-                debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}", conn.version, keep_alive, conn.clean_start);
+                info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}", conn.version, keep_alive, conn.clean_start);
             }
             return Ok(());
         } else {
@@ -107,7 +107,7 @@ pub async fn process_client<S>(
     loop {
         tokio::select! {
             _ = resend_tk.tick(), if inflight_store.len() > 0 => {
-                let now = coarsetime::Instant::now().elapsed().as_secs();
+                let now = coarsetime::Clock::now_since_epoch().as_secs();
                 for (tm, msg) in inflight_store.iter_mut() {
                     if *tm + 2 < now {
                         let _ = async_client.framed.send(msg.clone()).await;
@@ -124,7 +124,7 @@ pub async fn process_client<S>(
                     }
                     ClientCommand::Publish{qos, retain, topic, payload, properties, expiry_at} => {
                         if let Some(expiry_at) = expiry_at {
-                            if expiry_at <= coarsetime::Instant::now().elapsed().as_secs() {
+                            if expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
                             }
                         }
@@ -149,7 +149,7 @@ pub async fn process_client<S>(
                             }
                             let mut msg = msg.clone();
                             msg.with_dup();
-                            inflight_store.push((coarsetime::Instant::now().elapsed().as_secs(), msg));
+                            inflight_store.push((coarsetime::Clock::now_since_epoch().as_secs(), msg));
                         }
                         let _ = async_client.framed.send(msg).await;
                     }
@@ -160,7 +160,7 @@ pub async fn process_client<S>(
                     if msg.is_some() && msg.as_ref().unwrap().is_err() {
                         warn!(parent: &span, "error reading message: {:?}", msg.unwrap().err());
                     } else {
-                        warn!(parent: &span, "disconnected");
+                        info!(parent: &span, "disconnected");
                     }
                     broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
                     async_client.framed.close().await.ok();

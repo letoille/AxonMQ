@@ -123,7 +123,7 @@ impl Publish {
             properties = Property::try_from_properties(rdr)?;
             for prop in properties.iter() {
                 if let Property::MessageExpiryInterval(v) = prop {
-                    expiry_at = Some(coarsetime::Instant::now().elapsed().as_secs() + *v as u64);
+                    expiry_at = Some(coarsetime::Clock::now_since_epoch().as_secs() + *v as u64);
                 }
             }
             properties.retain(|p| !matches!(p, Property::MessageExpiryInterval(_)));

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use minijinja::Environment;
 use serde::Deserialize;
 use uuid::Uuid;
 use wasmtime::Engine;
 
 use super::{
     Processor,
-    processors::{logger, republish, webhook},
+    processors::{json_transform, logger, republish, webhook},
     wasm::WasmProcessor,
 };
 
@@ -32,6 +33,8 @@ pub enum ProcessorConfig {
         timeout_ms: Option<u64>,
         max_concurrency: Option<usize>,
     },
+    #[serde(rename = "json_transform")]
+    JsonTransform { template: String },
     #[serde(rename = "wasm")]
     Wasm { path: String, cfg: String },
     #[serde(other)]
@@ -43,17 +46,23 @@ impl ProcessorConfig {
         &self,
         id: Uuid,
         engine: Arc<Engine>,
+        env: Arc<Environment<'static>>,
     ) -> Result<Box<dyn Processor>, String> {
         match self {
             ProcessorConfig::Logger { .. } => {
                 logger::LoggerProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
             }
             ProcessorConfig::Republish { .. } => {
-                republish::RepublishProcessor::new_with_id(id, self.clone())
+                republish::RepublishProcessor::new_with_id(id, self.clone(), env)
                     .map_err(|e| e.to_string())
             }
             ProcessorConfig::WebHook { .. } => {
-                webhook::WebhookProcessor::new_with_id(id, self.clone()).map_err(|e| e.to_string())
+                webhook::WebhookProcessor::new_with_id(id, self.clone(), env)
+                    .map_err(|e| e.to_string())
+            }
+            ProcessorConfig::JsonTransform { .. } => {
+                json_transform::JsonTransformProcessor::new_with_id(id, self.clone(), env)
+                    .map_err(|e| e.to_string())
             }
             ProcessorConfig::Wasm { path, cfg } => {
                 WasmProcessor::new(engine, path.clone(), id, cfg.to_string())

@@ -37,81 +37,9 @@ The `config` table has the following parameters:
 
 ## Body Templating
 
-The `body_template` parameter gives you full control over the format of the outgoing HTTP request body. It uses the `minijinja` templating engine.
+The `body_template` parameter gives you full control over the format of the outgoing HTTP request body by using the `minijinja` templating engine.
 
-Within the template, you have access to the following variables from the MQTT message:
-
-| Variable | Type | Description |
-| :--- | :--- | :--- |
-| `{{ client_id }}` | String | The ID of the client that published the message. |
-| `{{ topic }}` | String | The topic the message was published to. |
-| `{{ qos }}` | Integer | The Quality of Service level of the message (0, 1, or 2). |
-| `{{ retain }}` | Boolean | The retain flag of the message (`true` or `false`). |
-| `{{ payload }}` | JSON Object | The message payload, automatically parsed as a JSON object. You can access its fields like `{{ payload.temperature }}`. If parsing fails, it will be `null`. |
-| `{{ raw_payload }}` | String | The raw message payload, interpreted as a UTF-8 string. |
-
-### Template Example
-
-**If `body_template` is:**
-```jinja
-{
-    "device": "{{ client_id }}",
-    "metric": {
-        "temp": {{ payload.temp }},
-        "unit": "celsius"
-    },
-    "retained_msg": {{ retain }}
-}
-```
-
-**And the incoming MQTT message payload is:**
-```json
-{"temp": 25.7, "humidity": 60}
-```
-
-**The resulting HTTP request body will be:**
-```json
-{
-    "device": "sensor-01",
-    "metric": {
-        "temp": 25.7,
-        "unit": "celsius"
-    },
-    "retained_msg": false
-}
-```
-
-### Using Filters
-
-Filters are functions that can be applied to variables to modify their values before rendering. They use the pipe `|` symbol. You can chain multiple filters together.
-
-**Syntax:** `{{ variable | filter_name(argument) }}`
-
-Here are some commonly used built-in filters:
-
-| Filter | Description | Example |
-| :--- | :--- | :--- |
-| `upper` | Converts a string to uppercase. | `{{ "hello" \| upper }}` → `HELLO` |
-| `lower` | Converts a string to lowercase. | `{{ "WORLD" \| lower }}` → `world` |
-| `replace` | Replaces a substring. | `{{ "a-b-c" \| replace("-", "_") }}` → `a_b_c` |
-| `truncate` | Truncates a string to a given length. | `{{ client_id \| truncate(8) }}` → `sensor-a...` |
-| `default` | Provides a default value if the variable is undefined or null. | `{{ username \| default(value="guest") }}` |
-| `length` | Returns the length of a string or a list. | `{{ [1, 2, 3] \| length }}` → `3` |
-| `round` | Rounds a number. Can take `method="ceil"` or `method="floor"`. | `{{ 42.7 \| round }}` → `43` |
-| `tojson` | Serializes a variable into a JSON string. | `{{ payload \| tojson }}` → `"{\"temp\":25}"` |
-
-**Combined Example:**
-
-```jinja
-{
-  "device_id_upper": "{{ client_id | upper }}",
-  "short_topic": "{{ topic | truncate(20) }}",
-  "user": "{{ username | default(value='system') }}",
-  "payload_as_string": "{{ payload | tojson }}"
-}
-```
-
-For a complete list of all available filters, please refer to the [official minijinja documentation](https://docs.rs/minijinja/latest/minijinja/filters/).
+This allows you to use variables from the MQTT message, and leverage powerful filters and logic to create any structure you need. For a complete guide on syntax, available variables, custom functions like `now()`, and filters, please see the **[Central Templating Guide](../templating-guide.md)**.
 
 ## Full Example
 

@@ -293,7 +293,7 @@ async fn handle_websocket_connection<S>(
     loop {
         tokio::select! {
             _ = resend_tk.tick(), if inflight_store.len() > 0 => {
-                let now = coarsetime::Instant::now().elapsed().as_secs();
+                let now = coarsetime::Clock::now_since_epoch().as_secs();
                 for (tm, msg) in inflight_store.iter_mut() {
                     if *tm + 2 < now {
                         let mut write_buf = BytesMut::new();
@@ -314,7 +314,7 @@ async fn handle_websocket_connection<S>(
                     }
                     ClientCommand::Publish{qos, retain, topic, payload, properties, expiry_at} => {
                         if let Some(expiry_at) = expiry_at {
-                            if expiry_at <= coarsetime::Instant::now().elapsed().as_secs() {
+                            if expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
                             }
                         }
@@ -339,7 +339,7 @@ async fn handle_websocket_connection<S>(
                             }
                             let mut msg = msg.clone();
                             msg.with_dup();
-                            inflight_store.push((coarsetime::Instant::now().elapsed().as_secs(), msg));
+                            inflight_store.push((coarsetime::Clock::now_since_epoch().as_secs(), msg));
                         }
                         let mut write_buf = BytesMut::new();
                         codec.encode(msg, &mut write_buf).unwrap();

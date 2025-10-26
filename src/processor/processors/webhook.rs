@@ -25,7 +25,7 @@ pub struct WebhookProcessor {
     url: String,
     method: Method,
     headers: HeaderMap,
-    env: Environment<'static>,
+    env: Arc<Environment<'static>>,
     body_template: Option<String>,
 }
 
@@ -33,6 +33,7 @@ impl WebhookProcessor {
     pub fn new_with_id(
         id: Uuid,
         config: ProcessorConfig,
+        env: Arc<Environment<'static>>,
     ) -> Result<Box<dyn Processor>, ProcessorError> {
         if let ProcessorConfig::WebHook {
             url,
@@ -71,10 +72,6 @@ impl WebhookProcessor {
 
             let concurrency = max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY);
             let semaphore = Arc::new(Semaphore::new(concurrency));
-
-            let env = Environment::new();
-            // In the future, we can add custom filters here if needed
-            // env.add_filter("my_filter", my_filter_function);
 
             Ok(Box::new(WebhookProcessor {
                 id,

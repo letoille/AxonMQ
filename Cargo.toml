@@ -40,6 +40,7 @@ clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = "0.12"
 minijinja = "2.12"
+chrono = "0.4"
 
 
 tonic = "*"

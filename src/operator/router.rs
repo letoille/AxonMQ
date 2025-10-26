@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use uuid;
 
+use minijinja::{Environment, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tracing::trace;
@@ -12,6 +13,7 @@ use crate::CONFIG;
 use crate::processor::message::Message;
 
 use super::chain::{Chain, ProcessorChain};
+use super::filter::MinijinjaFilter;
 
 use super::command::OperatorCommand;
 use super::trie::TopicTrie;
@@ -28,9 +30,22 @@ pub struct Router {
 
     #[allow(dead_code)]
     engine: Arc<Engine>,
+    #[allow(dead_code)]
+    minijinja_env: Arc<Environment<'static>>,
 }
 
 impl Router {
+    fn create_env() -> Environment<'static> {
+        let mut env = Environment::new();
+
+        env.add_function("now", || -> Value {
+            Value::from(coarsetime::Clock::now_since_epoch().as_millis())
+        });
+
+        MinijinjaFilter::register(&mut env);
+        env
+    }
+
     fn create_engine() -> Engine {
         use wasmtime::{Cache, CacheConfig, Config};
 
@@ -54,6 +69,7 @@ impl Router {
         let mut chains = HashMap::new();
         let mut trie = TopicTrie::new();
         let engine = Arc::new(Self::create_engine());
+        let minijinja_env = Arc::new(Self::create_env());
 
         let router_configs = &CONFIG.get().unwrap().router;
         for router in router_configs {
@@ -76,7 +92,7 @@ impl Router {
             let uuid = uuid::Uuid::parse_str(&processor.uuid).unwrap();
             let proc = processor
                 .config
-                .new_processor(uuid, engine.clone())
+                .new_processor(uuid, engine.clone(), minijinja_env.clone())
                 .await
                 .unwrap();
             processor_map.insert(processor.uuid.clone(), proc);
@@ -107,6 +123,7 @@ impl Router {
             trie: Some(trie),
             chains,
             engine,
+            minijinja_env,
         }
     }
 
