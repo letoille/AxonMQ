@@ -8,7 +8,7 @@ use wasmtime::Engine;
 
 use super::{
     Processor,
-    processors::{json_transform, logger, republish, webhook},
+    processors::{filter, json_transform, logger, republish, webhook},
     wasm::WasmProcessor,
 };
 
@@ -35,6 +35,11 @@ pub enum ProcessorConfig {
     },
     #[serde(rename = "json_transform")]
     JsonTransform { template: String },
+    #[serde(rename = "filter")]
+    Filter {
+        condition: String,
+        on_error_pass: Option<bool>,
+    },
     #[serde(rename = "wasm")]
     Wasm { path: String, cfg: String },
     #[serde(other)]
@@ -63,6 +68,9 @@ impl ProcessorConfig {
             ProcessorConfig::JsonTransform { .. } => {
                 json_transform::JsonTransformProcessor::new_with_id(id, self.clone(), env)
                     .map_err(|e| e.to_string())
+            }
+            ProcessorConfig::Filter { .. } => {
+                filter::FilterProcessor::new_with_id(id, self.clone(), env).map_err(|e| e.to_string())
             }
             ProcessorConfig::Wasm { path, cfg } => {
                 WasmProcessor::new(engine, path.clone(), id, cfg.to_string())

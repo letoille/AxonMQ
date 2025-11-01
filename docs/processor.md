@@ -36,6 +36,7 @@ AxonMQ comes with some processors that can be used out-of-the-box.
 | **Republish** | Forwards a message to a new, potentially dynamic topic. See the **[detailed guide](./processor/republish.md)**. | `src/processor/processors/republish.rs` |
 | **Webhook** | Sends message data to an external HTTP endpoint. See the **[detailed guide](./processor/webhook.md)**. | `src/processor/processors/webhook.rs` |
 | **Json-Transform** | Transforms a JSON payload using a minijinja template. See the **[detailed guide](./processor/json_transform.md)**. | `src/processor/processors/json_transform.rs` |
+| **Filter** | Conditionally drops a message based on a template expression. See the **[detailed guide](./processor/filter.md)**. | `src/processor/processors/filter.rs` |
 
 ### WebAssembly (WASM) Processors
 

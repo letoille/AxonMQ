@@ -162,3 +162,33 @@ config = { type = "json_transform", template = '''
 [[processor]]
 uuid = "98a34e3d-ff2d-4dc9-a52b-34a5c2c3d480"
 config = { type = "republish", topic = "processed/json/{{ client_id }}" }
+
+# --- Filter Processor Example ---
+# The following example demonstrates how to use the filter processor.
+# 1. It captures messages from "telemetry/thermostat".
+# 2. A `filter` processor checks if the temperature is high. 
+#    It drops the message if the temperature is NOT high (i.e., <= 40).
+# 3. If the message passes the filter, a `republish` processor sends it to the "alerts/high_temp" topic.
+
+[[router]]
+topic = "telemetry/thermostat"
+chain = ["high_temp_alert_chain"]
+
+[[chain]]
+name = "high_temp_alert_chain"
+processors = [
+"44444444-4444-4444-4444-444444444444", # UUID for the filter
+"55555555-5555-5555-5555-555555555555"  # UUID for the republisher
+]
+delivery = true
+
+# Note: The condition is for KEEPING the message.
+# So, we drop it if the temperature is defined and less than or equal to 40
+# If the payload doesn't have a 'temperature' field, pass it through but log a warning.
+[[processor]]
+uuid = "44444444-4444-4444-4444-444444444444"
+config = { type = "filter", condition = "{{ payload.temperature is not defined or payload.temperature > 40 }}", on_error_pass = true }
+
+[[processor]]
+uuid = "55555555-5555-5555-5555-555555555555"
+config = { type = "republish", topic = "alerts/high_temp" }
