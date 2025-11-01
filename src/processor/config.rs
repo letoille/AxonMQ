@@ -8,9 +8,21 @@ use wasmtime::Engine;
 
 use super::{
     Processor,
-    processors::{filter, json_transform, logger, republish, webhook},
+    processors::{anomaly_detector, filter, json_transform, logger, republish, webhook},
     wasm::WasmProcessor,
 };
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum AnomalyStrategy {
+    #[serde(rename = "threshold")]
+    Threshold { min: f64, max: f64 },
+    #[serde(rename = "moving_average")]
+    MovingAverage {
+        window_size: usize,
+        deviation_factor: f64,
+    },
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")]
@@ -39,6 +51,12 @@ pub enum ProcessorConfig {
     Filter {
         condition: String,
         on_error_pass: Option<bool>,
+    },
+    #[serde(rename = "anomaly_detector")]
+    AnomalyDetector {
+        value_selector: String,
+        series_id: String,
+        strategy: AnomalyStrategy,
     },
     #[serde(rename = "wasm")]
     Wasm { path: String, cfg: String },
@@ -70,7 +88,12 @@ impl ProcessorConfig {
                     .map_err(|e| e.to_string())
             }
             ProcessorConfig::Filter { .. } => {
-                filter::FilterProcessor::new_with_id(id, self.clone(), env).map_err(|e| e.to_string())
+                filter::FilterProcessor::new_with_id(id, self.clone(), env)
+                    .map_err(|e| e.to_string())
+            }
+            ProcessorConfig::AnomalyDetector { .. } => {
+                anomaly_detector::AnomalyDetectorProcessor::new_with_id(id, self.clone(), env)
+                    .map_err(|e| e.to_string())
             }
             ProcessorConfig::Wasm { path, cfg } => {
                 WasmProcessor::new(engine, path.clone(), id, cfg.to_string())

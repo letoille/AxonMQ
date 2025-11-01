@@ -41,6 +41,7 @@ uuid = { version = "1", features = ["v4"] }
 reqwest = "0.12"
 minijinja = { version = "2.12" }
 chrono = "0.4"
+dashmap = "6"
 
 
 tonic = "*"

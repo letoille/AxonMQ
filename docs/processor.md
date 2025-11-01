@@ -37,6 +37,7 @@ AxonMQ comes with some processors that can be used out-of-the-box.
 | **Webhook** | Sends message data to an external HTTP endpoint. See the **[detailed guide](./processor/webhook.md)**. | `src/processor/processors/webhook.rs` |
 | **Json-Transform** | Transforms a JSON payload using a minijinja template. See the **[detailed guide](./processor/json_transform.md)**. | `src/processor/processors/json_transform.rs` |
 | **Filter** | Conditionally drops a message based on a template expression. See the **[detailed guide](./processor/filter.md)**. | `src/processor/processors/filter.rs` |
+| **Anomaly-Detector** | Performs stateful anomaly detection on time-series data. See the **[detailed guide](./processor/anomaly_detector.md)**. | `src/processor/processors/anomaly_detector.rs` |
 
 ### WebAssembly (WASM) Processors
 

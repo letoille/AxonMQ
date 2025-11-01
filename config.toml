@@ -192,3 +192,23 @@ config = { type = "filter", condition = "{{ payload.temperature is not defined o
 [[processor]]
 uuid = "55555555-5555-5555-5555-555555555555"
 config = { type = "republish", topic = "alerts/high_temp" }
+
+# --- Anomaly Detector Processor Example ---
+# The following example demonstrates how to use the anomaly_detector processor.
+# 1. It captures pressure readings from the "telemetry/pressure_sensor" topic.
+# 2. The processor maintains a moving average of the last 10 values for each client.
+# 3. If a new value deviates from the average by more than 2.0 standard deviations,
+#    it logs a warning message with a detailed anomaly report.
+
+[[router]]
+topic = "telemetry/pressure_sensor"
+chain = ["pressure_anomaly_detection_chain"]
+
+[[chain]]
+name = "pressure_anomaly_detection_chain"
+processors = ["a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"] # UUID for the anomaly detector
+delivery = true # The original message will still be delivered to subscribers
+
+[[processor]]
+uuid = "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+config = { type = "anomaly_detector", value_selector = "payload.pressure", series_id = "{{ client_id }}", strategy = { type = "moving_average", window_size = 10, deviation_factor = 2.0 } }
