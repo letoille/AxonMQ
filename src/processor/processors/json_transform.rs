@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use minijinja::{Environment, context};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use tracing::{instrument, warn};
 use uuid::Uuid;
 
-use crate::utils;
+use crate::processor::message::{MetadataKey, MetadataPayloadFormat, MetadataValue};
 
 use super::super::{Processor, config::ProcessorConfig, error::ProcessorError, message::Message};
 
@@ -47,20 +47,25 @@ impl Processor for JsonTransformProcessor {
 
     #[instrument(skip(self, message), fields(id = %self.id))]
     async fn on_message(&self, mut message: Message) -> Result<Option<Message>, ProcessorError> {
-        let payload_json: Value = match serde_json::from_slice(&message.payload) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!(
-                    "failed to parse payload as JSON, topic: {}, Error: {}",
-                    utils::TruncateDisplay::new(&message.topic, 128),
-                    e
-                );
-                // If payload is not valid JSON, pass it through without transformation.
-                return Ok(Some(message));
-            }
+        let payload_json = if let Some(MetadataValue::Json(val)) = message
+            .metadata
+            .get(MetadataKey::ParsedPayloadJson.as_str())
+        {
+            val.clone()
+        } else {
+            let parsed_val: JsonValue = match serde_json::from_slice(&message.payload) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(error = %e, "Failed to parse payload as JSON, passing through without transformation.");
+                    return Ok(Some(message));
+                }
+            };
+            message.metadata.insert(
+                MetadataKey::ParsedPayloadJson.as_str().to_string(),
+                MetadataValue::Json(parsed_val.clone()),
+            );
+            parsed_val
         };
-
-        let raw_payload = String::from_utf8_lossy(&message.payload).to_string();
 
         let ctx = context! {
             topic => message.topic.clone(),
@@ -68,17 +73,37 @@ impl Processor for JsonTransformProcessor {
             qos => message.qos as u8,
             retain => message.retain,
             payload => payload_json,
-            raw_payload => raw_payload,
-            properties => message.properties.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+            metadata => message.metadata.clone(),
         };
 
         let new_payload_str = self.env.render_str(&self.template, ctx).map_err(|e| {
-            warn!("failed to render template: {}", e);
+            warn!("Failed to render template: {}", e);
             ProcessorError::TemplateError(e.to_string())
         })?;
 
-        // Update the message with the new payload and metadata
-        message.payload = Bytes::from(new_payload_str);
+        message.payload = Bytes::from(new_payload_str.clone());
+
+        match serde_json::from_str::<JsonValue>(&new_payload_str) {
+            Ok(new_json) => {
+                message.metadata.insert(
+                    MetadataKey::ParsedPayloadJson.as_str().to_string(),
+                    MetadataValue::Json(new_json),
+                );
+                message.metadata.insert(
+                    MetadataKey::PayloadFormat.as_str().to_string(),
+                    MetadataValue::String(MetadataPayloadFormat::Json.as_str().to_string()),
+                );
+            }
+            Err(_) => {
+                message
+                    .metadata
+                    .remove(MetadataKey::ParsedPayloadJson.as_str());
+                message.metadata.insert(
+                    MetadataKey::PayloadFormat.as_str().to_string(),
+                    MetadataValue::String(MetadataPayloadFormat::String.as_str().to_string()),
+                );
+            }
+        }
 
         Ok(Some(message))
     }

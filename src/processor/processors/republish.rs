@@ -4,23 +4,23 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use minijinja::{Environment, context};
-use tracing::warn;
+use serde_json::Value as JsonValue;
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use crate::mqtt::QoS;
+use crate::processor::message::{MetadataKey, MetadataValue};
 
 use super::super::{Processor, config::ProcessorConfig, error::ProcessorError, message::Message};
 
 #[derive(Clone)]
 pub struct RepublishProcessor {
     id: Uuid,
-    topic: String,
+    env: Arc<Environment<'static>>,
+    topic_template: String,
     qos: Option<QoS>,
     retain: Option<bool>,
     payload: Option<Bytes>,
-
-    is_topic_dynamic: bool,
-    env: Arc<Environment<'static>>,
 }
 
 impl RepublishProcessor {
@@ -38,16 +38,14 @@ impl RepublishProcessor {
         {
             let qos = qos.map(|q| QoS::try_from(q).unwrap_or(QoS::AtMostOnce));
             let payload = payload.map(|p| Bytes::from(p));
-            let is_topic_dynamic = topic.contains("{{") || topic.contains("{%");
 
             Ok(Box::new(RepublishProcessor {
                 id,
-                topic,
+                env,
+                topic_template: topic,
                 qos,
                 retain,
                 payload,
-                env,
-                is_topic_dynamic,
             }))
         } else {
             Err(ProcessorError::InvalidConfiguration(
@@ -67,40 +65,56 @@ impl Processor for RepublishProcessor {
         self
     }
 
-    async fn on_message(&self, message: Message) -> Result<Option<Message>, ProcessorError> {
-        let mut new_message = message;
-
-        if self.is_topic_dynamic {
-            let ctx = context! {
-                topic => new_message.topic.clone(),
-                client_id => new_message.client_id.clone(),
-                qos => new_message.qos as u8,
-                retain => new_message.retain,
-                payload => String::from_utf8_lossy(&new_message.payload).to_string(),
-                properties => new_message.properties.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+    #[instrument(skip(self, message), fields(id = %self.id))]
+    async fn on_message(&self, mut message: Message) -> Result<Option<Message>, ProcessorError> {
+        let payload_json = if let Some(MetadataValue::Json(val)) = message
+            .metadata
+            .get(MetadataKey::ParsedPayloadJson.as_str())
+        {
+            val.clone()
+        } else {
+            let parsed_val: JsonValue = match serde_json::from_slice(&message.payload) {
+                Ok(v) => v,
+                Err(_) => JsonValue::Null,
             };
+            message.metadata.insert(
+                MetadataKey::ParsedPayloadJson.as_str().to_string(),
+                MetadataValue::Json(parsed_val.clone()),
+            );
+            parsed_val
+        };
 
-            let topic = self.env.render_str(&self.topic, ctx).map_err(|e| {
-                warn!("failed to render topic template: {}", e);
+        let ctx = context! {
+            topic => message.topic.clone(),
+            client_id => message.client_id.clone(),
+            qos => message.qos as u8,
+            retain => message.retain,
+            payload => payload_json,
+            metadata => message.metadata.clone(),
+        };
+
+        let final_topic = self
+            .env
+            .render_str(&self.topic_template, ctx)
+            .map_err(|e| {
+                warn!("Failed to render republish topic template: {}", e);
                 ProcessorError::TemplateError(e.to_string())
             })?;
-            new_message.topic = topic;
-        } else {
-            new_message.topic = self.topic.clone();
-        }
+
+        message.topic = final_topic;
 
         if let Some(qos) = self.qos {
-            new_message.qos = qos;
+            message.qos = qos;
         }
 
         if let Some(retain) = self.retain {
-            new_message.retain = retain;
+            message.retain = retain;
         }
 
         if let Some(payload) = &self.payload {
-            new_message.payload = payload.clone();
+            message.payload = payload.clone();
         }
 
-        Ok(Some(new_message))
+        Ok(Some(message))
     }
 }

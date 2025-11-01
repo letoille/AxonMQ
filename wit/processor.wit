@@ -12,7 +12,6 @@ interface handler {
         v-int(s64),
         v-float(f64),
         v-bool(bool),
-        v-binary(list<u8>),
     }
 
     record message {

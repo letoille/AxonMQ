@@ -22,6 +22,8 @@ pub enum AnomalyStrategy {
         window_size: usize,
         deviation_factor: f64,
     },
+    #[serde(rename = "ewma")]
+    Ewma { alpha: f64, deviation_factor: f64 },
 }
 
 #[derive(Debug, Deserialize, Clone)]

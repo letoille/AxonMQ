@@ -7,10 +7,12 @@ use async_trait::async_trait;
 use minijinja::{Environment, context};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use tokio::sync::Semaphore;
-use tracing::{error, instrument, trace, warn};
+use tracing::{instrument, warn};
 use uuid::Uuid;
+
+use crate::processor::message::{MetadataKey, MetadataValue};
 
 use super::super::{Processor, config::ProcessorConfig, error::ProcessorError, message::Message};
 
@@ -101,19 +103,35 @@ impl Processor for WebhookProcessor {
         self
     }
 
-    #[instrument(skip(self, message), fields(id = %self.id, method = %self.method, url = %self.url))]
-    async fn on_message(&self, message: Message) -> Result<Option<Message>, ProcessorError> {
+    #[instrument(skip(self, message), fields(id = %self.id))]
+    async fn on_message(&self, mut message: Message) -> Result<Option<Message>, ProcessorError> {
         let _permit = self
             .semaphore
             .acquire()
             .await
-            .expect("semaphore should not be closed");
+            .expect("Semaphore should not be closed");
 
         let body = match &self.body_template {
             Some(template) => {
-                let payload_json: Value =
-                    serde_json::from_slice(&message.payload).unwrap_or(Value::Null);
-                let raw_payload = String::from_utf8_lossy(&message.payload).to_string();
+                let payload_json = if let Some(MetadataValue::Json(val)) = message
+                    .metadata
+                    .get(MetadataKey::ParsedPayloadJson.as_str())
+                {
+                    val.clone()
+                } else {
+                    let parsed_val: JsonValue = match serde_json::from_slice(&message.payload) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            warn!(error = %e, "Failed to parse payload as JSON for webhook template, passing through.");
+                            return Ok(Some(message));
+                        }
+                    };
+                    message.metadata.insert(
+                        MetadataKey::ParsedPayloadJson.as_str().to_string(),
+                        MetadataValue::Json(parsed_val.clone()),
+                    );
+                    parsed_val
+                };
 
                 let ctx = context! {
                     topic => message.topic.clone(),
@@ -121,22 +139,22 @@ impl Processor for WebhookProcessor {
                     qos => message.qos as u8,
                     retain => message.retain,
                     payload => payload_json,
-                    raw_payload => raw_payload,
-                    properties => message.properties.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+                    metadata => message.metadata.clone(),
                 };
 
                 self.env
                     .render_str(template, ctx)
                     .map_err(|e| {
-                        warn!("failed to render template: {}", e);
-                        ProcessorError::TemplateError(e.to_string())
+                        warn!("Failed to render webhook template: {}", e);
+                        ProcessorError::TemplateError("Template rendering failed".to_string())
                     })?
                     .into()
             }
             None => message.payload.clone(),
         };
 
-        let start = coarsetime::Instant::now();
+        let start_time = coarsetime::Instant::now();
+
         let res = self
             .client
             .request(self.method.clone(), &self.url)
@@ -144,22 +162,20 @@ impl Processor for WebhookProcessor {
             .body(body)
             .send()
             .await;
-        let duration = start.elapsed().as_millis();
+
+        let duration = start_time.elapsed();
 
         match res {
             Ok(response) => {
-                if response.status().is_success() {
-                    trace!("[{}] request sent successfully", duration);
+                let status = response.status();
+                if status.is_success() {
+                    tracing::trace!(url = %self.url, ?duration, status = %status, "request sent");
                 } else {
-                    warn!(
-                        "[{}] request failed with status: {}",
-                        duration,
-                        response.status()
-                    );
+                    tracing::warn!(url = %self.url, ?duration, status = %status, "request failed");
                 }
             }
             Err(e) => {
-                error!("failed to send request: {}", e);
+                tracing::error!(url = %self.url, ?duration, error = %e, "Failed to send webhook request");
             }
         }
 

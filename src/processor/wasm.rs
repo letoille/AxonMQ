@@ -157,8 +157,8 @@ impl From<Message> for handler::Message {
                         crate::processor::message::MetadataValue::Bool(b) => {
                             handler::Value::VBool(*b)
                         }
-                        crate::processor::message::MetadataValue::Bytes(b) => {
-                            handler::Value::VBinary(b.to_vec())
+                        crate::processor::message::MetadataValue::Json(j) => {
+                            handler::Value::VString(j.to_string())
                         }
                     },
                 )
@@ -227,9 +227,6 @@ impl From<handler::Message> for Message {
                         }
                         handler::Value::VBool(b) => {
                             crate::processor::message::MetadataValue::Bool(*b)
-                        }
-                        handler::Value::VBinary(b) => {
-                            crate::processor::message::MetadataValue::Bytes(b.clone().into())
                         }
                     },
                 )

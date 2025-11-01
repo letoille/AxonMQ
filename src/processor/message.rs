@@ -1,17 +1,47 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
 
 use crate::mqtt::{QoS, protocol::property::Property};
 use crate::utils;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize)]
 pub enum MetadataValue {
     String(String),
     Int(i64),
     Float(f64),
     Bool(bool),
-    Bytes(Bytes),
+    Json(JsonValue),
+}
+
+pub enum MetadataKey {
+    PayloadFormat,
+    ParsedPayloadJson,
+}
+
+pub enum MetadataPayloadFormat {
+    Json,
+    String,
+}
+
+impl MetadataKey {
+    pub fn as_str(&self) -> &str {
+        match self {
+            MetadataKey::PayloadFormat => "__payload_format",
+            MetadataKey::ParsedPayloadJson => "__parsed_payload_json",
+        }
+    }
+}
+
+impl MetadataPayloadFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            MetadataPayloadFormat::Json => "json",
+            MetadataPayloadFormat::String => "string",
+        }
+    }
 }
 
 impl std::fmt::Display for MetadataValue {
@@ -21,7 +51,7 @@ impl std::fmt::Display for MetadataValue {
             MetadataValue::Int(i) => write!(f, "{}", i),
             MetadataValue::Float(fl) => write!(f, "{}", fl),
             MetadataValue::Bool(b) => write!(f, "{}", b),
-            MetadataValue::Bytes(b) => write!(f, "{}", utils::BytesTruncated::new(b, 32)),
+            MetadataValue::Json(json) => write!(f, "{}", json),
         }
     }
 }

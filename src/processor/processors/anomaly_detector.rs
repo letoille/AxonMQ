@@ -16,18 +16,24 @@ use super::super::{
     message::Message,
 };
 
-// State for the Moving Average strategy
 #[derive(Clone, Debug)]
 struct MovingAverageState {
     window: VecDeque<f64>,
     sum: f64,
-    sum_sq: f64, // Sum of squares for efficient variance calculation
+    sum_sq: f64,
 }
 
-// An enum to hold different kinds of state for different strategies in the future
+#[derive(Clone, Debug)]
+struct EwmaState {
+    mean: f64,
+    variance: f64,
+    count: u64,
+}
+
 #[derive(Clone, Debug)]
 enum SeriesState {
     MovingAverage(MovingAverageState),
+    Ewma(EwmaState),
 }
 
 #[derive(Clone)]
@@ -88,12 +94,11 @@ impl Processor for AnomalyDetectorProcessor {
             }
         };
 
-        let raw_payload = String::from_utf8_lossy(&message.payload).to_string();
         let ctx = context! {
             topic => message.topic.clone(),
             client_id => message.client_id.clone(),
             payload => payload_json,
-            raw_payload => raw_payload,
+            metadata => message.metadata.clone(),
         };
 
         let series_key = match self.env.render_str(&self.series_id, ctx.clone()) {
@@ -107,7 +112,7 @@ impl Processor for AnomalyDetectorProcessor {
         let value_template = format!("{{{{ {} }}}}", self.value_selector);
         let rendered_value_str = match self.env.render_str(&value_template, ctx) {
             Ok(s) if !s.is_empty() => s,
-            _ => return Ok(Some(message)), // If template renders empty or errors, pass through
+            _ => return Ok(Some(message)),
         };
 
         let value = match rendered_value_str.parse::<f64>() {
@@ -176,6 +181,40 @@ impl Processor for AnomalyDetectorProcessor {
                     state.window.push_back(value);
                     state.sum += value;
                     state.sum_sq += value.powi(2);
+                }
+            }
+            AnomalyStrategy::Ewma {
+                alpha,
+                deviation_factor,
+            } => {
+                let mut entry = self.state.entry(series_key.clone()).or_insert_with(|| {
+                    SeriesState::Ewma(EwmaState {
+                        mean: 0.0,
+                        variance: 0.0,
+                        count: 0,
+                    })
+                });
+
+                if let SeriesState::Ewma(state) = entry.value_mut() {
+                    if state.count == 0 {
+                        state.mean = value;
+                    } else {
+                        let diff = value - state.mean;
+                        let incr = *alpha * diff;
+                        state.mean += incr;
+                        state.variance = (1.0 - *alpha) * (state.variance + diff * incr);
+                    }
+                    state.count += 1;
+
+                    if state.count > 1 {
+                        let std_dev = state.variance.sqrt();
+                        let threshold = std_dev * deviation_factor;
+                        if (value - state.mean).abs() > threshold {
+                            anomaly_report = Some(
+                                json!({ "strategy": "ewma", "value": value, "mean": state.mean, "std_dev": std_dev }),
+                            );
+                        }
+                    }
                 }
             }
         }
