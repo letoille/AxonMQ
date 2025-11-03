@@ -1,6 +1,6 @@
 [package]
 name = "axonmq"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["le7.toille@gmail.com"]
 description = "A high-performance MQTT broker written in Rust, powered by Rustls and Tokio."
