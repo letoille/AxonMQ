@@ -26,7 +26,7 @@ struct Cmd {
     config_dir: String,
 }
 
-fn get_default_log_dir() -> &'static str {
+pub fn get_default_log_dir() -> &'static str {
     if cfg!(windows) {
         format!(r"{}\\AxonMQ\\logs\\", std::env::var("ProgramData").unwrap()).leak()
     } else if cfg!(target_os = "macos") {

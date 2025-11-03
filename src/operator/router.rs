@@ -6,11 +6,11 @@ use uuid;
 use minijinja::{Environment, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tracing::trace;
+use tracing::{trace, warn};
 use wasmtime::Engine;
 
-use crate::CONFIG;
 use crate::processor::message::Message;
+use crate::{CONFIG, get_default_log_dir};
 
 use super::chain::{Chain, ProcessorChain};
 use super::filter::MinijinjaFilter;
@@ -57,7 +57,8 @@ impl Router {
         let mut cache_config = CacheConfig::new();
         cache_config.with_cleanup_interval(std::time::Duration::from_secs(24 * 60 * 60)); // 1 day
         cache_config.with_files_total_size_soft_limit(1024 * 1024 * 1024); // 1GB
-        cache_config.with_directory("./wasm_cache");
+        cache_config
+            .with_directory(std::path::Path::new(get_default_log_dir()).join("./wasm_cache"));
         let cache = Cache::new(cache_config).ok();
         config.cache(cache);
 
@@ -93,9 +94,16 @@ impl Router {
             let proc = processor
                 .config
                 .new_processor(uuid, engine.clone(), minijinja_env.clone())
-                .await
-                .unwrap();
-            processor_map.insert(processor.uuid.clone(), proc);
+                .await;
+
+            match proc {
+                Ok(p) => {
+                    processor_map.insert(processor.uuid.clone(), p);
+                }
+                Err(e) => {
+                    warn!("failed to create processor {}: {}", processor.uuid, e);
+                }
+            }
         }
 
         let chain_configs = &CONFIG.get().unwrap().chain;
