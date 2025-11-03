@@ -1,4 +1,4 @@
-1 #!/bin/sh
+#!/bin/sh
 set -e
 
 if ! getent group axonmq >/dev/null; then
