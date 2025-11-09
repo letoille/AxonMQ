@@ -95,4 +95,21 @@ impl Helper {
             .await
             .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
     }
+
+    pub async fn sparkplug_b_publish(
+        &self,
+        topic: String,
+        payload: Bytes,
+    ) -> Result<(), OperatorError> {
+        self.router_tx
+            .send(OperatorCommand::SparkPlugBPublish {
+                client_id: "sparkplug_b_application".to_string(),
+                topic,
+                payload,
+                retain: false,
+                qos: QoS::AtMostOnce,
+            })
+            .await
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
+    }
 }

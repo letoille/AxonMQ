@@ -9,6 +9,8 @@ pub mod sink;
 mod trie;
 mod utils;
 
+use crate::service::sparkplug_b::helper::SparkPlugBApplicationHelper;
+
 pub struct Operator {
     matcher: matcher::Matcher,
     router: router::Router,
@@ -22,12 +24,12 @@ impl Operator {
         Operator { matcher, router }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, sparkplug_helper: Option<SparkPlugBApplicationHelper>) {
         self.matcher.run();
-        self.router.run();
+        self.router.run(sparkplug_helper);
     }
 
-    pub fn matcher_helper(&self) -> helper::Helper {
+    pub fn helper(&self) -> helper::Helper {
         helper::Helper::new(self.matcher.sender(), self.router.sender())
     }
 }

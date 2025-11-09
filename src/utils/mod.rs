@@ -1,5 +1,7 @@
-use std::fmt;
+pub mod time;
+
 use bytes::Bytes;
+use std::fmt;
 
 pub struct TruncateDisplay<'a> {
     value: &'a str,
@@ -36,7 +38,11 @@ impl<'a> BytesTruncated<'a> {
 impl<'a> fmt::Display for BytesTruncated<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let truncated = self.bytes.len() > self.limit;
-        let len_to_print = if truncated { self.limit } else { self.bytes.len() };
+        let len_to_print = if truncated {
+            self.limit
+        } else {
+            self.bytes.len()
+        };
 
         for (i, byte) in self.bytes.iter().take(len_to_print).enumerate() {
             if i > 0 {

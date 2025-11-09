@@ -9,6 +9,7 @@ use tracing_subscriber::filter::Targets;
 use tracing_subscriber::{Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
+mod error;
 mod mqtt;
 mod operator;
 mod processor;
@@ -22,7 +23,7 @@ static CONFIG: std::sync::OnceLock<config::Config> = std::sync::OnceLock::new();
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Cmd {
-    #[arg(short, long, value_name = "config <dir>", default_value = "./")]
+    #[arg(short, long, value_name = "config directory", default_value = "./")]
     config_dir: String,
 }
 
@@ -46,6 +47,8 @@ fn main() -> Result<()> {
 
     let filter = Targets::new()
         .with_target("axonmq", Level::INFO)
+        .with_target("axonmq::service", Level::INFO)
+        .with_target("axonmq::service::sparkplug_b", Level::DEBUG)
         .with_target("axonmq::mqtt", Level::INFO)
         .with_target("axonmq::operator::matcher", Level::INFO)
         .with_target("axonmq::processor::processors::logger", Level::INFO);
@@ -81,10 +84,19 @@ fn main() -> Result<()> {
     runtime.block_on(async {
         coarsetime::Updater::new(100).start().unwrap();
 
+        let mut spb_service = service::sparkplug_b::SparkPlugBApplication::new();
+        let spb_helper = Some(spb_service.helper());
+        let spb_in_helper = spb_service.in_helper();
+
+        let mut operator = operator::Operator::new().await;
+        let operator_helper = operator.helper();
+        operator.run(spb_helper.clone());
+
+        spb_service.run(operator_helper.clone()).await;
+
         let mut broker = server::Broker::new().await;
         let broker_helper = broker.get_helper();
-        let operator_helper = broker.operator_helper();
-        broker.run().await;
+        broker.run(operator_helper.clone()).await;
 
         let tcp_listener_config = &config.mqtt.listener.tcp;
         listener::spawn_tcp_listener(
@@ -124,10 +136,17 @@ fn main() -> Result<()> {
             operator_helper.clone(),
         );
 
-        info!("AxonMQ started. Press Ctrl+C to exit.");
-        tokio::signal::ctrl_c().await?;
-        warn!("AxonMQ shutting down.");
+        if let Ok(restful) =
+            service::restful::RESTful::new(&config.service.restful.ip, config.service.restful.port)
+        {
+            info!("AxonMQ started. Press Ctrl+C to exit.");
+            restful.run(spb_in_helper).await;
+        } else {
+            warn!("Failed to start RESTful service.");
+            return Err(anyhow::anyhow!("Failed to start RESTful service."));
+        }
 
+        tokio::signal::ctrl_c().await?;
         Ok(())
     })
 }

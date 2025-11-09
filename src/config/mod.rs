@@ -16,6 +16,18 @@ pub struct Config {
     pub router: Vec<router::Router>,
     pub chain: Vec<chain::Chain>,
     pub processor: Vec<processor::Processor>,
+    pub service: ServiceConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RestfulConfig {
+    pub ip: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ServiceConfig {
+    pub restful: RestfulConfig,
 }
 
 #[derive(Debug, Deserialize)]

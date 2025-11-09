@@ -34,6 +34,13 @@ pub(crate) enum OperatorCommand {
         properties: Vec<Property>,
         expiry_at: Option<u64>,
     },
+    SparkPlugBPublish {
+        client_id: String,
+        topic: String,
+        payload: Bytes,
+        retain: bool,
+        qos: QoS,
+    },
 }
 
 impl std::fmt::Display for OperatorCommand {
@@ -56,6 +63,9 @@ impl std::fmt::Display for OperatorCommand {
                 client_id, topic, ..
             } => {
                 write!(f, "Publish: client_id={}, topic={}", client_id, topic)
+            }
+            OperatorCommand::SparkPlugBPublish { topic, .. } => {
+                write!(f, "SparkPlugBPublish: topic={}", topic)
             }
         }
     }

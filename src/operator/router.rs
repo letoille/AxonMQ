@@ -10,6 +10,7 @@ use tracing::{trace, warn};
 use wasmtime::Engine;
 
 use crate::processor::message::Message;
+use crate::service::sparkplug_b::helper::SparkPlugBApplicationHelper;
 use crate::{CONFIG, get_default_log_dir};
 
 use super::chain::{Chain, ProcessorChain};
@@ -139,7 +140,7 @@ impl Router {
         self.command_tx.clone()
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, sparkplug_helper: Option<SparkPlugBApplicationHelper>) {
         let mut command_rx = self.command_rx.take().unwrap();
         let matcher_sender = self.matcher_sender.clone();
         let mut trie = self.trie.take().unwrap();
@@ -151,6 +152,17 @@ impl Router {
                 tokio::select! {
                     Some(cmd) = command_rx.recv() => {
                         if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, properties, expiry_at} = cmd {
+                            if let Some(ref sparkplug_helper) = sparkplug_helper {
+                                if sparkplug_helper.is_sparkplug_b_topic(&topic) {
+                                    sparkplug_helper.publish(
+                                        client_id.clone(),
+                                        retain, qos,
+                                        topic.clone(),
+                                        payload.clone(),
+                                    ).await;
+                                }
+                            }
+
                             let chains = Self::find_chain(&mut cache, &mut trie, &chains, &topic, &client_id);
                             if let Some(chains) = chains {
                                 let msg = Message::new(
@@ -173,6 +185,31 @@ impl Router {
                                     payload,
                                     properties,
                                     expiry_at,
+                                }).await.ok();
+                            }
+                        } else if let OperatorCommand::SparkPlugBPublish { client_id, topic, payload, retain, qos } = cmd {
+                            let chains = Self::find_chain(&mut cache, &mut trie, &chains, &topic, &client_id);
+                            if let Some(chains) = chains {
+                                let msg = Message::new(
+                                    client_id.clone(),
+                                    topic.clone(),
+                                    qos,
+                                    retain,
+                                    None,
+                                    payload.clone(),
+                                    vec![],
+                                );
+
+                                tokio::spawn( Self::chains_process(chains, msg, matcher_sender.clone()));
+                            } else {
+                                matcher_sender.send(OperatorCommand::Publish {
+                                    client_id,
+                                    retain,
+                                    qos,
+                                    topic,
+                                    payload,
+                                    properties: vec![],
+                                    expiry_at: None,
                                 }).await.ok();
                             }
                         } else {

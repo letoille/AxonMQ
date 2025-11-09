@@ -5,9 +5,7 @@ use tracing::debug;
 
 use crate::operator::sink::local::LocalClientSink;
 use crate::{
-    CONFIG,
-    mqtt::helper::ClientHelper,
-    operator::{Operator, helper::Helper as OperatorHelper},
+    CONFIG, mqtt::helper::ClientHelper, operator::helper::Helper as OperatorHelper,
     utils as g_utils,
 };
 
@@ -43,8 +41,6 @@ pub struct Client {
 }
 
 pub struct Broker {
-    operator: Option<Operator>,
-
     broker_tx: mpsc::Sender<BrokerCommand>,
     broker_rx: Option<mpsc::Receiver<BrokerCommand>>,
 
@@ -57,20 +53,14 @@ pub struct Broker {
 impl Broker {
     pub async fn new() -> Self {
         let (broker_tx, broker_rx) = mpsc::channel::<BrokerCommand>(128);
-        let operator = Operator::new().await;
 
         Broker {
-            operator: Some(operator),
             broker_tx,
             broker_rx: Some(broker_rx),
             store_clients: Some(HashMap::new()),
             clean_clients: Some(HashMap::new()),
             retain_trie: Some(RetainedTrie::new()),
         }
-    }
-
-    pub fn operator_helper(&self) -> OperatorHelper {
-        self.operator.as_ref().unwrap().matcher_helper()
     }
 
     pub fn get_helper(&self) -> BrokerHelper {
@@ -104,7 +94,7 @@ impl Broker {
         store_clients: &mut HashMap<String, Client>,
         clean_clients: &mut HashMap<String, Client>,
         cmd: BrokerCommand,
-        operator_helper: &mut OperatorHelper,
+        operator_helper: OperatorHelper,
         broker_helper: BrokerHelper,
         store_msgs: &mut HashMap<String, Vec<ClientCommand>>,
         retain_trie: &mut RetainedTrie,
@@ -454,16 +444,12 @@ impl Broker {
         }
     }
 
-    pub async fn run(&mut self) {
-        let mut operator = self.operator.take().unwrap();
-        operator.run();
-
+    pub async fn run(&mut self, operator_helper: OperatorHelper) {
         let mut broker_rx = self.broker_rx.take().unwrap();
         let mut store_clients = self.store_clients.take().unwrap();
         let mut clean_clients = self.clean_clients.take().unwrap();
 
         let mut clean_tk = time::interval(time::Duration::from_secs(60));
-        let mut operator_helper = operator.matcher_helper();
         let broker_helper = self.get_helper();
         let mut store_msgs: HashMap<String, Vec<ClientCommand>> = HashMap::new();
         let mut retain_trie = self.retain_trie.take().unwrap();
@@ -472,7 +458,7 @@ impl Broker {
             loop {
                 tokio::select! {
                     Some(cmd) = broker_rx.recv() => {
-                        Self::handle_message(&mut store_clients, &mut clean_clients, cmd, &mut operator_helper, broker_helper.clone(), &mut store_msgs, &mut retain_trie).await;
+                        Self::handle_message(&mut store_clients, &mut clean_clients, cmd, operator_helper.clone(), broker_helper.clone(), &mut store_msgs, &mut retain_trie).await;
                     }
                     _ = clean_tk.tick() => {
                         let mut remove_ids = Vec::new();

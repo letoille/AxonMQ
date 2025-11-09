@@ -220,6 +220,9 @@ impl Matcher {
                     !v.is_empty()
                 });
             }
+            SparkPlugBPublish { .. } => {
+                unreachable!("SparkPlugBPublish should not be handled in Matcher");
+            }
         }
     }
 
