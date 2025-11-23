@@ -92,7 +92,7 @@ impl TryFrom<u8> for ReturnCode {
 impl std::fmt::Display for ReturnCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReturnCode::Success => write!(f, "0: Connection Accepted"),
+            ReturnCode::Success => write!(f, "0: Success"),
             ReturnCode::UnsupportedProtocolVersion => {
                 write!(f, "1: Connection Refused, Unacceptable Protocol Version")
             }

@@ -48,10 +48,10 @@ impl From<FixedOptions> for Bytes {
         let remaining = options.bytes.len();
         if remaining < 128 {
             buf.put_u8(remaining as u8);
-        } else if remaining < 32768 {
+        } else if remaining < 16384 {
             buf.put_u8(((remaining % 128) as u8) | 0x80);
             buf.put_u8((remaining / 128) as u8);
-        } else if remaining < 8388608 {
+        } else if remaining < 2097152 {
             buf.put_u8(((remaining % 128) as u8) | 0x80);
             buf.put_u8((((remaining / 128) % 128) as u8) | 0x80);
             buf.put_u8((remaining / 16384) as u8);

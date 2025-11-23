@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use tokio::{sync::mpsc, task, time};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::operator::sink::local::LocalClientSink;
 use crate::{
@@ -227,6 +227,11 @@ impl Broker {
                 subscribe,
                 resp,
             } => {
+                let span = tracing::info_span!(
+                    "client",
+                    client_id = %g_utils::TruncateDisplay::new(&client_id, 24)
+                );
+
                 if let Some(client) = store_clients
                     .get_mut(&client_id)
                     .or_else(|| clean_clients.get_mut(&client_id))
@@ -237,6 +242,7 @@ impl Broker {
                             && (utils::parse_shared_subscription(&topic).is_ok()
                                 || !utils::is_shared_subscription(&topic))
                         {
+                            info!(parent: &span, "subscribe topic: {}, qos: {}", topic, options.qos);
                             let (group, actual_topic) =
                                 utils::parse_shared_subscription(&topic).unwrap_or(("", &topic));
                             if !client.subscribes.contains_key(&topic) {
@@ -299,12 +305,17 @@ impl Broker {
                 unsubscribe,
                 resp,
             } => {
+                let span = tracing::info_span!(
+                    "client",
+                    client_id = %g_utils::TruncateDisplay::new(&client_id, 24)
+                );
                 if let Some(client) = store_clients
                     .get_mut(&client_id)
                     .or_else(|| clean_clients.get_mut(&client_id))
                 {
                     let len = unsubscribe.topics.len();
                     for topic in unsubscribe.topics.into_iter() {
+                        info!(parent: &span, "unsubscribe topic: {}", topic);
                         if client.subscribes.remove(&topic).is_some() {
                             let (share_group, actual_topic) =
                                 if utils::is_shared_subscription(&topic) {

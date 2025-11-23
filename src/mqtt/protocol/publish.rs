@@ -76,10 +76,10 @@ impl Publish {
             let prop_len = prop_bytes.len();
             if prop_len < 128 {
                 buf.put_u8(prop_len as u8);
-            } else if prop_len < 32768 {
+            } else if prop_len < 16384 {
                 buf.put_u8(((prop_len % 128) as u8) | 0x80);
                 buf.put_u8((prop_len / 128) as u8);
-            } else if prop_len < 8388608 {
+            } else if prop_len < 2097152 {
                 buf.put_u8(((prop_len % 128) as u8) | 0x80);
                 buf.put_u8((((prop_len / 128) % 128) as u8) | 0x80);
                 buf.put_u8((prop_len / 16384) as u8);
