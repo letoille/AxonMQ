@@ -158,6 +158,23 @@ pub struct DataMetric {
     pub properties: Vec<Property>,
 }
 
+impl From<DataMetric> for payload::Metric {
+    fn from(dm: DataMetric) -> Self {
+        payload::Metric {
+            is_historical: None,
+            is_transient: None,
+            metadata: None,
+            name: dm.name,
+            alias: dm.alias,
+            timestamp: Some(dm.timestamp),
+            datatype: dm.datatype,
+            is_null: dm.is_null,
+            value: dm.value.map(|v| v.into()),
+            properties: None,
+        }
+    }
+}
+
 impl TryFrom<&payload::Metric> for DataMetric {
     type Error = SpbError;
 

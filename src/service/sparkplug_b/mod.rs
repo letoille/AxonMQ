@@ -5,9 +5,12 @@ pub mod in_helper;
 mod message;
 mod model;
 mod proto;
+mod utils;
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
+use prost::Message;
 use tokio::sync::mpsc;
 use tracing::{debug, info, info_span};
 
@@ -18,6 +21,7 @@ use error::SpbError;
 use in_helper::{GetDeviceResponse, GetNodeResponse, InHelper, InMessage};
 use message::MessageType;
 use model::{group::Group, node::Node};
+use proto::Payload;
 
 pub struct SparkPlugBApplication {
     rx: Option<mpsc::Receiver<helper::Publish>>,
@@ -90,14 +94,21 @@ impl SparkPlugBApplication {
                         }
                     }
                     Some(in_msg) = in_rx.recv() => {
-                        Self::in_message(in_msg, &mut groups);
+                        if let Some((topic, payload)) = Self::in_message(in_msg, &mut groups) {
+                            let _ = operator_helper.sparkplug_b_publish(
+                                topic, Bytes::from(payload.encode_to_vec())
+                            ).await;
+                        }
                     }
                 }
             }
         });
     }
 
-    fn in_message(msg: InMessage, groups: &mut HashMap<String, Group>) {
+    fn in_message(
+        msg: InMessage,
+        groups: &mut HashMap<String, Group>,
+    ) -> Option<(String, Payload)> {
         use InMessage::*;
         match msg {
             GetGroups { group, resp } => {
@@ -111,6 +122,7 @@ impl SparkPlugBApplication {
                     let values = groups.keys().cloned().collect::<Vec<_>>();
                     let _ = resp.send(Ok(values));
                 }
+                None
             }
             GetNodes {
                 group_id,
@@ -139,6 +151,7 @@ impl SparkPlugBApplication {
                 } else {
                     let _ = resp.send(Err(SpbError::GroupNotFound.into()));
                 }
+                None
             }
             GetDevice {
                 group_id,
@@ -171,6 +184,67 @@ impl SparkPlugBApplication {
                     }
                 } else {
                     let _ = resp.send(Err(SpbError::GroupNotFound.into()));
+                }
+                None
+            }
+            SetNodeRequest { req, resp } => {
+                let group = groups.get(&req.group_id).ok_or(SpbError::GroupNotFound);
+                if group.is_err() {
+                    let _ = resp.send(Err(SpbError::GroupNotFound.into()));
+                    return None;
+                }
+                let node = group
+                    .unwrap()
+                    .nodes
+                    .get(&req.node_id)
+                    .ok_or(SpbError::NodeNotFound);
+                if node.is_err() {
+                    let _ = resp.send(Err(SpbError::NodeNotFound.into()));
+                    return None;
+                }
+
+                let (payload, result) = node.unwrap().command(req.kvs);
+                let _ = resp.send(Ok(result));
+                if let Some(payload) = payload {
+                    Some((utils::ncmd_topic(&req.group_id, &req.node_id), payload))
+                } else {
+                    None
+                }
+            }
+            SetDeviceRequest { req, resp } => {
+                let group = groups.get(&req.group_id).ok_or(SpbError::GroupNotFound);
+                if group.is_err() {
+                    let _ = resp.send(Err(SpbError::GroupNotFound.into()));
+                    return None;
+                }
+                let node = group
+                    .unwrap()
+                    .nodes
+                    .get(&req.node_id)
+                    .ok_or(SpbError::NodeNotFound);
+                if node.is_err() {
+                    let _ = resp.send(Err(SpbError::NodeNotFound.into()));
+                    return None;
+                }
+                let device = node
+                    .unwrap()
+                    .devices
+                    .get(&req.device)
+                    .ok_or(SpbError::DeviceNotFound);
+                if device.is_err() {
+                    let _ = resp.send(Err(SpbError::DeviceNotFound.into()));
+                    return None;
+                }
+
+                let (payload, result) = device.unwrap().command(req.kvs);
+                let _ = resp.send(Ok(result));
+                if let Some(payload) = payload {
+                    Some((
+                        utils::dcmd_topic(&req.group_id, &req.node_id, &req.device),
+                        payload,
+                    ))
+                } else {
+                    None
                 }
             }
         }

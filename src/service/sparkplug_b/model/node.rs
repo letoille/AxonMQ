@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use crate::utils::time::now_milliseconds;
+
 use super::super::error::SpbError;
-use super::super::in_helper::GetNodeResponse;
+use super::super::in_helper::{GetNodeResponse, KV};
+use super::super::proto;
 use super::device::Device;
 use super::metric::{DataMetric, Metric};
 use super::template::{Template, TemplateDataInstance, TemplateInstance};
@@ -217,5 +220,146 @@ impl Node {
         self.online = true;
 
         Ok(())
+    }
+
+    fn new_payload(metrics: Vec<proto::payload::Metric>) -> proto::Payload {
+        let payload = proto::Payload {
+            timestamp: Some(now_milliseconds()),
+            metrics,
+            seq: Some(0),
+            uuid: None,
+            body: None,
+        };
+
+        payload
+    }
+
+    pub fn command(&self, kvs: Vec<KV>) -> (Option<proto::Payload>, Vec<(String, String)>) {
+        let mut results = Vec::new();
+        let mut metrics = Vec::new();
+        let mut errors = false;
+
+        for kv in kvs.into_iter() {
+            if let Some(ref template) = kv.template {
+                let metric = match self.metrics.get(template) {
+                    Some(m) => m,
+                    None => {
+                        results.push((kv.name.clone(), SpbError::MetricNotFound.to_string()));
+                        errors = true;
+                        continue;
+                    }
+                };
+                if metric.datatype != 19 {
+                    results.push((kv.name.clone(), SpbError::MetricNotMatch.to_string()));
+                    errors = true;
+                    continue;
+                }
+                if let Some(Value::TemplateInstance(ref instance)) = metric.value {
+                    let l_metric = match instance.metrics.get(&kv.name) {
+                        Some(m) => m,
+                        None => {
+                            results.push((kv.name.clone(), SpbError::MetricNotFound.to_string()));
+                            errors = true;
+                            continue;
+                        }
+                    };
+                    let value = Value::try_from((kv.value, l_metric.datatype));
+                    if let Err(e) = value {
+                        results.push((kv.name.clone(), e.to_string()));
+                        errors = true;
+                        continue;
+                    }
+
+                    let l_metric = DataMetric {
+                        alias: l_metric.alias,
+                        name: if l_metric.alias.is_some() {
+                            None
+                        } else {
+                            Some(l_metric.name.clone())
+                        },
+                        datatype: Some(l_metric.datatype),
+                        timestamp: now_milliseconds(),
+                        is_null: None,
+                        properties: vec![],
+                        value: Some(value.unwrap()),
+                    };
+                    let data_instance = TemplateDataInstance {
+                        template_ref: instance.name.clone(),
+                        version: instance.version.clone(),
+                        metrics: vec![l_metric],
+                    };
+                    let template_metric = proto::payload::Metric {
+                        name: if metric.alias.is_some() {
+                            None
+                        } else {
+                            Some(metric.name.clone())
+                        },
+                        alias: metric.alias,
+                        datatype: Some(metric.datatype),
+                        value: Some(Value::TemplateDataInstance(data_instance).into()),
+                        timestamp: Some(now_milliseconds()),
+                        properties: None,
+                        is_historical: None,
+                        is_null: None,
+                        is_transient: None,
+                        metadata: None,
+                    };
+
+                    metrics.push(template_metric);
+                    results.push((kv.name.clone(), "success".to_string()));
+                } else {
+                    results.push((kv.name.clone(), SpbError::MetricNotMatch.to_string()));
+                    errors = true;
+                    continue;
+                }
+            } else {
+                let metric = match self.metrics.get(&kv.name) {
+                    Some(m) => m,
+                    None => {
+                        results.push((kv.name.clone(), SpbError::MetricNotFound.to_string()));
+                        errors = true;
+                        continue;
+                    }
+                };
+                let value = Value::try_from((kv.value, metric.datatype));
+                if let Err(e) = value {
+                    results.push((kv.name.clone(), e.to_string()));
+                    errors = true;
+                    continue;
+                }
+
+                if metric.datatype == 19 {
+                    results.push((kv.name.clone(), SpbError::MetricNotMatch.to_string()));
+                    errors = true;
+                    continue;
+                }
+
+                let metric = proto::payload::Metric {
+                    name: if metric.alias.is_some() {
+                        None
+                    } else {
+                        Some(metric.name.clone())
+                    },
+                    alias: metric.alias,
+                    datatype: Some(metric.datatype),
+                    value: Some(value.unwrap().into()),
+                    timestamp: Some(now_milliseconds()),
+                    properties: None,
+                    is_historical: None,
+                    is_null: None,
+                    is_transient: None,
+                    metadata: None,
+                };
+
+                metrics.push(metric);
+                results.push((kv.name.clone(), "success".to_string()));
+            }
+        }
+
+        if errors {
+            (None, results)
+        } else {
+            (Some(Self::new_payload(metrics)), results)
+        }
     }
 }

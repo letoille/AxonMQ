@@ -20,6 +20,8 @@ pub enum SpbError {
     BdSeqNotFound,
     #[error("Invalid DataType")]
     InvalidDataType,
+    #[error("Invalid Value")]
+    InvalidValue,
     #[error("Invalid Node Rebirth")]
     InvalidNodeRebirth,
     #[error("Invalid TimeStamp")]
