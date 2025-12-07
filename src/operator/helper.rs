@@ -1,8 +1,11 @@
 use bytes::Bytes;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
+use crate::CONFIG;
 use crate::mqtt::QoS;
 use crate::mqtt::protocol::property::Property;
+use crate::utils::time::now_milliseconds;
 
 use super::command::OperatorCommand;
 use super::error::OperatorError;
@@ -12,6 +15,12 @@ use super::sink::Sink;
 pub struct Helper {
     matcher_tx: mpsc::Sender<OperatorCommand>,
     router_tx: mpsc::Sender<OperatorCommand>,
+}
+
+#[derive(Serialize)]
+struct StateMessage {
+    pub online: bool,
+    pub timestamp: u64,
 }
 
 impl Helper {
@@ -108,6 +117,28 @@ impl Helper {
                 payload,
                 retain: false,
                 qos: QoS::AtMostOnce,
+            })
+            .await
+            .map_err(|e| OperatorError::ChannelSendError(e.to_string()))
+    }
+
+    pub async fn sparkplug_b_state_online(&self) -> Result<(), OperatorError> {
+        let topic = format!(
+            "spBv1.0/STATE/{}",
+            CONFIG.get().unwrap().service.sparkplug_b.application_id
+        );
+        let payload = StateMessage {
+            online: true,
+            timestamp: now_milliseconds(),
+        };
+
+        self.router_tx
+            .send(OperatorCommand::SparkPlugBPublish {
+                client_id: "sparkplug_b_application".to_string(),
+                topic,
+                payload: Bytes::from(serde_json::to_vec(&payload).unwrap()),
+                retain: true,
+                qos: QoS::AtLeastOnce,
             })
             .await
             .map_err(|e| OperatorError::ChannelSendError(e.to_string()))

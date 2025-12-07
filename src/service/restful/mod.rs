@@ -25,7 +25,7 @@ impl RESTful {
         Ok(Self { server })
     }
 
-    pub async fn run(&self, spb_in_helper: SpbInHelper) {
+    pub async fn run(&self, spb_in_helper: Option<SpbInHelper>) {
         let cors = warp::cors()
             .allow_any_origin()
             .allow_headers(vec![
@@ -44,16 +44,22 @@ impl RESTful {
         let redirect_dashboard = warp::path::end().map(|| warp::redirect(Uri::from_static("/dh")));
         let dashboard = warp::path("dh").and(warp::fs::dir("dist"));
 
-        let api_routers = redirect_dashboard
-            .or(dashboard)
-            .or(spb_routers(spb_in_helper));
-
-        let routers_with_cors = api_routers.with(cors);
-        let routers_with_log = routers_with_cors.with(warp::log("axonmq::service::restful"));
-        let routers_with_error_handler = routers_with_log.recover(handle_rejection);
-        warp::serve(routers_with_error_handler)
-            .run(self.server)
-            .await;
+        if let Some(spb_in_helper) = spb_in_helper {
+            let routers = redirect_dashboard
+                .or(dashboard)
+                .or(spb_routers(spb_in_helper))
+                .with(cors)
+                .with(warp::log("axonmq::service::restful"))
+                .recover(handle_rejection);
+            warp::serve(routers).run(self.server).await;
+        } else {
+            let routers = redirect_dashboard
+                .or(dashboard)
+                .with(cors)
+                .with(warp::log("axonmq::service::restful"))
+                .recover(handle_rejection);
+            warp::serve(routers).run(self.server).await;
+        }
     }
 }
 

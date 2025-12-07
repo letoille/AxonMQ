@@ -84,15 +84,21 @@ fn main() -> Result<()> {
     runtime.block_on(async {
         coarsetime::Updater::new(100).start().unwrap();
 
-        let mut spb_service = service::sparkplug_b::SparkPlugBApplication::new();
-        let spb_helper = Some(spb_service.helper());
-        let spb_in_helper = spb_service.in_helper();
+        let mut spb_service = if CONFIG.get().unwrap().service.sparkplug_b.enable {
+            Some(service::sparkplug_b::SparkPlugBApplication::new())
+        } else {
+            None
+        };
+        let spb_helper = spb_service.as_ref().map(|s| s.helper());
+        let spb_in_helper = spb_service.as_mut().map(|s| s.in_helper().clone());
 
         let mut operator = operator::Operator::new().await;
         let operator_helper = operator.helper();
         operator.run(spb_helper.clone());
 
-        spb_service.run(operator_helper.clone()).await;
+        if let Some(spb_service) = spb_service.as_mut() {
+            spb_service.run(operator_helper.clone()).await;
+        }
 
         let mut broker = server::Broker::new().await;
         let broker_helper = broker.get_helper();

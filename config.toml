@@ -57,7 +57,7 @@ enable = true
 application_id = "axonmq_sparkplug_b_application"
 
 [service.sparkplug_b.rebirth_on_error]
-# whether to rebirth on sequence mismatch error
+# whether to rebirth on sequence mismatch error, Not Implemented yet
 on_seq_mismatch = false
 # whether to rebirth on malformed payload error
 on_malformed_payload = true

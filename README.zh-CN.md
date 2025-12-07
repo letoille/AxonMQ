@@ -1,15 +1,14 @@
-# AxonMQ
+# AxonMQ: 一款原生支持 Sparkplug B 的高性能 MQTT Broker
 
 本文档也提供以下语言版本：[English](README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
 ---
 
-## 简体中文
-
-AxonMQ 是一个用 Rust 构建的轻量级、高性能 MQTT 代理，旨在实现可靠性和可扩展性。AxonMQ 适用于从物联网数据收集到实时消息传递的广泛应用。
+AxonMQ 是一个用 Rust 构建的轻量级、高性能 **MQTT 代理 (MQTT Broker)**，旨在实现可靠性和可扩展性。它内置了一个 **Sparkplug B** 主机应用程序 (Host Application)，使其成为一个强大的、用于工业物联网 (IIoT) 数据收集和实时消息传递的智能中心。
 
 ### ✨ 功能特性
 
+- **原生 Sparkplug B 支持**: 开箱即用，可作为一个有状态的 Sparkplug B 主机应用程序，解码消息负载并管理整个网络拓扑的状态。
 - **多协议支持**：通过 TCP、TLS、WebSocket (WS) 和 Secure WebSocket (WSS) 支持 MQTT v3.1.1 和 v5.0。
 - **高性能**：基于 Tokio 构建，利用 Rust 的性能和安全特性，实现低延迟、高吞吐量的消息传递。
 - **轻量级**：资源占用极低，仅需 20MB 内存即可启动。以环保为目标，旨在消耗更少的资源、更少的电量，并排放更少的二氧化碳。
@@ -64,6 +63,7 @@ graph TD
 
 - **[路由指南](./docs/router.md)**: 了解如何配置路由规则。
 - **[处理器指南](./docs/processor.md)**: 了解如何使用原生 Rust 或 WebAssembly (WASM) 扩展数据管道。
+- **[CLI 使用指南](./docs/cli-usage.md)**: 学习如何使用命令行工具。
 
 ### 🚀 快速入门
 
@@ -118,7 +118,6 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -da
 
 我们正在持续改进 AxonMQ。以下是未来版本中计划推出的一些主要功能：
 
-- **深度集成 Sparkplug B**：全面支持 Sparkplug B 规范，包括高级状态管理和设备生命周期。
 - **支持集群部署**：通过集群部署能力实现高可用性和水平扩展性。
 - **基于 Web 的管理控制台**：一个用户友好的 Web 界面，用于监控、管理和配置 AxonMQ 代理。
 - **访问控制列表 (ACL) 支持**：实现强大的 ACL，以管理客户端发布和订阅主题的权限。

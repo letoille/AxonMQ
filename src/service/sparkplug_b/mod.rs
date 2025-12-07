@@ -14,8 +14,8 @@ use prost::Message;
 use tokio::sync::mpsc;
 use tracing::{debug, info, info_span};
 
-use crate::operator::helper::Helper as OperatorHelper;
 use crate::service::sparkplug_b::model::device::Device;
+use crate::{CONFIG, operator::helper::Helper as OperatorHelper};
 
 use error::SpbError;
 use in_helper::{GetDeviceResponse, GetNodeResponse, InHelper, InMessage};
@@ -57,11 +57,13 @@ impl SparkPlugBApplication {
         let rx = self.rx.take().unwrap();
         let in_rx = self.in_rx.take().unwrap();
         let mut groups = HashMap::<String, Group>::new();
+        let rebirth_on_error = CONFIG.get().unwrap().service.sparkplug_b.rebirth_on_error;
 
         tokio::spawn(async move {
             let mut rx = rx;
             let mut in_rx = in_rx;
             let mut cmd = cmd::Cmd::new();
+            let _ = operator_helper.sparkplug_b_state_online().await;
 
             loop {
                 tokio::select! {
@@ -83,9 +85,11 @@ impl SparkPlugBApplication {
                                             gn.1,
                                             None,
                                         );
-                                        let _ = operator_helper.sparkplug_b_publish(
-                                            topic, payload
-                                        ).await;
+                                        if rebirth_on_error.on_malformed_payload {
+                                            let _ = operator_helper.sparkplug_b_publish(
+                                                topic, payload
+                                            ).await;
+                                        }
                                     }
                                 }
                                 SpbError::InvalidTopic => {}

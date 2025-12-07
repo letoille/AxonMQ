@@ -1,13 +1,14 @@
-# AxonMQ
+# AxonMQ: A High-Performance MQTT Broker with Native Sparkplug B Support
 
 This document is also available in: [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
 
 ---
 
-A lightweight, high-performance MQTT broker built in Rust, designed for reliability and scalability. AxonMQ is suitable for a wide range of applications, from IoT data collection to real-time messaging.
+AxonMQ is a lightweight, high-performance **MQTT broker** built in Rust, designed for reliability and scalability. It features a built-in **Sparkplug B** Host Application, making it a powerful and intelligent hub for Industrial IoT (IIoT) data collection and real-time messaging.
 
 ### ✨ Features
 
+- **Native Sparkplug B Support**: Acts as a stateful Sparkplug B Host Application out-of-the-box, decoding payloads and managing the state of the entire network topology.
 - **Multi-Protocol Support**: MQTT v3.1.1 and v5.0 over TCP, TLS, WebSocket (WS), and Secure WebSocket (WSS).
 - **High Performance**: Built on Tokio, leveraging Rust's performance and safety features for low-latency, high-throughput message delivery.
 - **Lightweight**: Minimal resource footprint, capable of starting with as little as 20MB of memory. Designed with environmental goals in mind, it aims to use fewer resources, consume less power, and emit less CO2.
@@ -62,6 +63,7 @@ For detailed information about the architecture and advanced features, please re
 
 - **[Router Guide](./docs/router.md)**: Learn how to configure routing rules.
 - **[Processor Guide](./docs/processor.md)**: Extend the data pipeline with native Rust or WebAssembly (WASM) processors.
+- **[CLI Usage Guide](./docs/cli-usage.md)**: Learn how to use the command-line interface.
 
 ### 🚀 Getting Started
 
@@ -114,7 +116,6 @@ This project is licensed under the **Business Source License 1.1**. Please see t
 
 We are continuously working to enhance AxonMQ. Here are some key features planned for future releases:
 
-- **Deep Sparkplug B Integration**: Comprehensive support for Sparkplug B specification, including advanced state management and device lifecycle.
 - **Cluster Deployment Support**: Enable high-availability and horizontal scalability through cluster deployment capabilities.
 - **Web-based Management Console**: A user-friendly web interface for monitoring, managing, and configuring the AxonMQ broker.
 - **Access Control List (ACL) Support**: Implement robust ACLs to manage client permissions for publishing and subscribing to topics.

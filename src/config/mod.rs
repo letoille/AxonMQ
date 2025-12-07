@@ -25,9 +25,24 @@ pub struct RestfulConfig {
     pub port: u16,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize, Copy, Clone)]
+pub struct SpbRebirthConfig {
+    pub on_seq_mismatch: bool,
+    pub on_malformed_payload: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpbConfig {
+    pub enable: bool,
+    pub application_id: String,
+    pub rebirth_on_error: SpbRebirthConfig,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ServiceConfig {
     pub restful: RestfulConfig,
+    pub sparkplug_b: SpbConfig,
 }
 
 #[derive(Debug, Deserialize)]

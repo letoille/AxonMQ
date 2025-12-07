@@ -55,3 +55,21 @@ The true power of AxonMQ is unleashed when its "State, Data, and Semantics" awar
     *   Our ultimate vision is for AxonMQ to become a **Low-Code IIoT Integration Platform**.
     *   Users don't need to write complex code. Just by writing a simple `config.toml` file and combining our native processors (`filter`, `anomaly-detector`, `webhook`...) like Lego bricks, they can "orchestrate" powerful IT/OT data processing workflows.
     *   In this vision, the core of AxonMQ is no longer just about passing data, but about **Programming the Data-in-Motion**.
+
+### Configuration
+
+The built-in Sparkplug B Host Application can be configured in the `config.toml` file under the `[service.sparkplug_b]` table.
+
+```toml
+[service.sparkplug_b]
+# Enable or disable the Sparkplug B service.
+# If false, the broker will act as a standard MQTT broker without any
+# special handling for Sparkplug B messages.
+enable = true
+
+# The unique identifier for this Host Application.
+# This ID is used when publishing the host's own STATE message, allowing
+# Edge Nodes to discover this application.
+application_id = "axonmq_sparkplug_b_application"
+```
+
