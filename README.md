@@ -56,6 +56,7 @@ graph TD
 | Persistent Sessions      |    ✔️    | For `clean_start = false`           |
 | Shared Subscriptions     |    ✔️    | MQTT v5 feature (`$share/...`)      |
 | Message Expiry           |    ✔️    | MQTT v5 feature                     |
+| Topic Alias              |    ❌    | Not yet supported                   |
 
 ### 📚 Documentation
 
@@ -64,6 +65,7 @@ For detailed information about the architecture and advanced features, please re
 - **[Router Guide](./docs/router.md)**: Learn how to configure routing rules.
 - **[Processor Guide](./docs/processor.md)**: Extend the data pipeline with native Rust or WebAssembly (WASM) processors.
 - **[CLI Usage Guide](./docs/cli-usage.md)**: Learn how to use the command-line interface.
+- **[MQTT Test Cases](./docs/test_cases.md)**: Detailed test cases for MQTT compliance.
 
 ### 🚀 Getting Started
 

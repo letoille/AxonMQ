@@ -17,6 +17,8 @@ use crate::mqtt::{
     helper::BrokerHelper, utils,
 };
 
+use super::store::Store;
+
 struct ClientStream<S: AsyncRead + AsyncWrite + Unpin> {
     framed: Framed<S, MessageCodec>,
 }
@@ -40,10 +42,11 @@ pub async fn process_client<S>(
     resend_tk.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     let mut version = MqttProtocolVersion::V3_1_1;
-    let mut keep_alive = 60u16;
+    let mut keep_alive = CONFIG.get().unwrap().mqtt.settings.keep_alive;
     let mut client_id = String::new();
     let mut client_rx = None;
     let mut inflight_maximum = 128u16;
+    let mut pre_store = None;
 
     let result = time::timeout(time::Duration::from_secs(3), async {
         let msg = async_client.framed.next().await;
@@ -58,7 +61,7 @@ pub async fn process_client<S>(
             let (client_tx, c_rx) = mpsc::channel::<ClientCommand>(128);
             client_rx = Some(c_rx);
 
-            if let Ok(ack) = broker_helper.connect(conn.clone(), client_tx).await {
+            if let Ok((ack, old_store)) = broker_helper.connect(conn.clone(), client_tx).await {
                 if ack.return_code != ReturnCode::Success {
                     debug!(parent: &span, "connection rejected: {}", ack.return_code);
                     async_client
@@ -70,21 +73,24 @@ pub async fn process_client<S>(
                     return Err(());
                 }
                 version = conn.version;
-                keep_alive = conn.keep_alive;
+                if conn.keep_alive > keep_alive {
+                    keep_alive = conn.keep_alive;
+                }
                 client_id = conn.client_id.clone();
+                pre_store = old_store;
 
                 if conn.version == MqttProtocolVersion::V5 {
                     async_client.framed.codec_mut().with_v5();
                 }
-                inflight_maximum = conn.inflight_maximum.unwrap_or(128);
-                async_client.framed.codec_mut().with_packet_size(conn.packet_maximum.unwrap_or(2 * 1024 * 1024));
+                inflight_maximum = conn.inflight_maximum;
+                async_client.framed.codec_mut().with_packet_size(conn.packet_maximum);
 
                 async_client
                     .framed
                     .send(Message::ConnAck(ack))
                     .await
                     .ok();
-                info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}", conn.version, keep_alive, conn.clean_start);
+                info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.session_expiry_interval);
             }
             return Ok(());
         } else {
@@ -99,32 +105,51 @@ pub async fn process_client<S>(
         return;
     }
 
+    let mut message_store = Store::new(
+        inflight_maximum as usize,
+        CONFIG.get().unwrap().mqtt.settings.max_receive_queue as usize,
+    );
+    if let Some(pre_store) = pre_store {
+        message_store.extend(pre_store);
+    }
+
     let mut packet_id = 1;
-    let mut inflight_store: Vec<(u64, Message)> = Vec::new();
     let mut client_rx = client_rx.unwrap();
-    let mut qos2_msg_store: Vec<publish::Publish> = Vec::new();
+    let resend_time = CONFIG.get().unwrap().mqtt.settings.resend_interval;
+    let mut client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
+    let mut keepalive_tk = time::interval(time::Duration::from_secs(keep_alive as u64));
+    keepalive_tk.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
-            _ = resend_tk.tick(), if inflight_store.len() > 0 => {
+            _ = keepalive_tk.tick(), if coarsetime::Clock::now_since_epoch().as_secs() - client_msg_tm > (keep_alive * 3 / 2) as u64 => {
+                warn!(parent: &span, "keep alive timeout, disconnecting");
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, message_store).await.ok();
+                async_client.framed.close().await.ok();
+                break;
+            }
+            _ = resend_tk.tick(), if message_store.inflight_size() > 0 => {
                 let now = coarsetime::Clock::now_since_epoch().as_secs();
-                for (tm, msg) in inflight_store.iter_mut() {
-                    if *tm + 2 < now {
-                        let _ = async_client.framed.send(msg.clone()).await;
-                        *tm = now;
+                for (pkid, msg) in message_store.get_inflight_messages(now, resend_time).into_iter() {
+                    if let Some(msg) = msg {
+                        let mut msg = Message::Publish(msg);
+                        msg.with_dup();
+                        let _ = async_client.framed.send(msg).await;
+                    } else {
+                        let _ = async_client.framed.send(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success, vec![]))).await;
                     }
                 }
             }
-            Some(command) = client_rx.recv(), if inflight_store.len() < inflight_maximum as usize => {
+            Some(command) = client_rx.recv() => {
                 match command {
                     ClientCommand::Disconnect(code) => {
-                        async_client.framed.send(Message::Disconnect(Disconnect::new(code) )).await.ok();
+                        async_client.framed.send(Message::Disconnect(Disconnect::new(code))).await.ok();
                         async_client.framed.close().await.ok();
                         break;
                     }
                     ClientCommand::Publish{qos, retain, topic, payload, properties, expiry_at} => {
                         if let Some(expiry_at) = expiry_at {
-                            if expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
+                            if expiry_at != 0 && expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
                             }
                         }
@@ -134,7 +159,7 @@ pub async fn process_client<S>(
                         } else {
                             None
                         };
-                        let msg = Message::Publish(publish::Publish::new(
+                        let publish = publish::Publish::new(
                             false,
                             qos,
                             retain,
@@ -142,15 +167,11 @@ pub async fn process_client<S>(
                             pid,
                             payload.clone(),
                             properties.clone(),
-                        ));
+                        );
                         if qos != QoS::AtMostOnce {
-                            if inflight_store.len() >= inflight_maximum as usize {
-                                let _ = inflight_store.remove(0);
-                            }
-                            let mut msg = msg.clone();
-                            msg.with_dup();
-                            inflight_store.push((coarsetime::Clock::now_since_epoch().as_secs(), msg));
+                            message_store.inflight_insert(publish.clone());
                         }
+                        let msg = Message::Publish(publish);
                         let _ = async_client.framed.send(msg).await;
                     }
                 }
@@ -162,7 +183,7 @@ pub async fn process_client<S>(
                     } else {
                         info!(parent: &span, "disconnected");
                     }
-                    broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
+                    broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
                     async_client.framed.close().await.ok();
                     break;
                 }
@@ -170,23 +191,25 @@ pub async fn process_client<S>(
                 if let Message::PacketTooLarge = msg {
                     warn!(parent: &span, "packet too large, disconnecting");
                     async_client.framed.send(Message::Disconnect(Disconnect::new(ReturnCode::PacketTooLarge))).await.ok();
-                    broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge).await.ok();
+                    broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, message_store).await.ok();
                     async_client.framed.close().await.ok();
                     break;
                 }
 
-                let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut inflight_store, &mut qos2_msg_store, client_id.as_str(), msg).instrument(span.clone()).await;
+                client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
+
+                let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, client_id.as_str(), msg).instrument(span.clone()).await;
                 match result {
                     Ok(Some(resp)) => {
                         let _ = async_client.framed.send(resp).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        warn!(parent: &span, "error handling message: {}", e);
+                        warn!(parent: &span, "connection error : {}", e);
                         if let MqttProtocolError::Disconnected(code) = e {
-                            broker_helper.disconnected(client_id.as_str(), code).await.ok();
+                            broker_helper.disconnected(client_id.as_str(), code, message_store).await.ok();
                         } else {
-                            broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
+                            broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
                         }
                         async_client.framed.close().await.ok();
                         break;
@@ -200,8 +223,7 @@ pub async fn process_client<S>(
 pub async fn handle_message(
     broker_helper: BrokerHelper,
     operator_helper: OperatorHelper,
-    inflight_store: &mut Vec<(u64, Message)>,
-    qos2_msg_store: &mut Vec<publish::Publish>,
+    message_store: &mut Store,
     client_id: &str,
     msg: Message,
 ) -> Result<Option<Message>, MqttProtocolError> {
@@ -286,17 +308,23 @@ pub async fn handle_message(
                     .ok();
                 Ok(Some(Message::PubAck(pub_ack)))
             } else if publish.qos == QoS::ExactlyOnce {
-                let pub_rec = publish::PubRec::new(
+                if message_store.qos2_contains(publish.packet_id.unwrap()) {
+                    let pub_rec = publish::PubRec::new(
+                        publish.packet_id.unwrap_or(0),
+                        ReturnCode::Success,
+                        vec![],
+                    );
+                    return Ok(Some(Message::PubRec(pub_rec)));
+                }
+
+                let mut pub_rec = publish::PubRec::new(
                     publish.packet_id.unwrap_or(0),
                     ReturnCode::Success,
                     vec![],
                 );
-                if qos2_msg_store.len()
-                    >= CONFIG.get().unwrap().mqtt.settings.max_receive_queue as usize
-                {
-                    qos2_msg_store.remove(0);
-                }
-                qos2_msg_store.push(publish);
+                if !message_store.qos2_insert(publish) {
+                    pub_rec.reason_code = ReturnCode::ReceiveMaximumExceeded;
+                };
                 Ok(Some(Message::PubRec(pub_rec)))
             } else {
                 if publish.retain {
@@ -327,68 +355,44 @@ pub async fn handle_message(
             }
         }
         Message::PubAck(puback) => {
-            inflight_store.retain(|(_, m)| {
-                if let Message::Publish(p) = m {
-                    if p.packet_id == Some(puback.packet_id) {
-                        return false;
-                    }
-                }
-                true
-            });
+            message_store.inflight_ack(puback.packet_id);
             Ok(None)
         }
         Message::PubComp(pubcomp) => {
-            inflight_store.retain(|(_, m)| {
-                if let Message::Publish(p) = m {
-                    if p.packet_id == Some(pubcomp.packet_id) {
-                        return false;
-                    }
-                }
-                true
-            });
+            message_store.inflight_cmp(pubcomp.packet_id);
             Ok(None)
         }
         Message::PubRec(pubrec) => {
+            message_store.inflight_rec(pubrec.packet_id);
             let pub_rel = publish::PubRel::new(pubrec.packet_id, ReturnCode::Success, vec![]);
             Ok(Some(Message::PubRel(pub_rel)))
         }
         Message::PubRel(pubrel) => {
-            let mut pub_comp = publish::PubComp::new(pubrel.packet_id, ReturnCode::Success, vec![]);
-            let mut found = false;
-            for (i, p) in qos2_msg_store.iter().enumerate() {
-                if p.packet_id == Some(pubrel.packet_id) {
-                    if p.retain {
-                        broker_helper
-                            .retain_message(
-                                p.topic.clone(),
-                                p.qos,
-                                p.payload.clone(),
-                                p.properties.clone(),
-                                p.expiry_at,
-                            )
-                            .await
-                            .ok();
-                    }
-                    operator_helper
-                        .publish(
-                            client_id.to_string(),
-                            p.retain,
-                            p.qos,
-                            p.topic.clone(),
-                            p.payload.clone(),
-                            p.properties.clone(),
-                            p.expiry_at,
-                        )
-                        .await
-                        .ok();
-                    qos2_msg_store.remove(i);
-                    found = true;
-                    break;
-                }
+            let publish_msg = message_store.qos2_rel(pubrel.packet_id);
+            let pub_comp = publish::PubComp::new(
+                pubrel.packet_id,
+                if publish_msg.is_none() {
+                    ReturnCode::PacketIdentifierNotFound
+                } else {
+                    ReturnCode::Success
+                },
+                vec![],
+            );
+            if let Some(publish) = publish_msg {
+                operator_helper
+                    .publish(
+                        client_id.to_string(),
+                        publish.retain,
+                        publish.qos,
+                        publish.topic,
+                        publish.payload,
+                        publish.properties,
+                        publish.expiry_at,
+                    )
+                    .await
+                    .ok();
             }
-            if !found {
-                pub_comp.reason_code = ReturnCode::PacketIdentifierNotFound;
-            }
+
             Ok(Some(Message::PubComp(pub_comp)))
         }
         _ => Err(MqttProtocolError::InvalidMessageType),

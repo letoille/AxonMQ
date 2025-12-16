@@ -48,9 +48,10 @@ fn main() -> Result<()> {
     let filter = Targets::new()
         .with_target("axonmq", Level::INFO)
         .with_target("axonmq::service", Level::INFO)
-        .with_target("axonmq::service::sparkplug_b", Level::DEBUG)
+        .with_target("axonmq::service::sparkplug_b", Level::INFO)
         .with_target("axonmq::mqtt", Level::INFO)
         .with_target("axonmq::operator::matcher", Level::INFO)
+        .with_target("axonmq::processor::wasm", Level::INFO)
         .with_target("axonmq::processor::processors::logger", Level::INFO);
 
     let file_appender = tracing_appender::rolling::daily(get_default_log_dir(), "axonmq.log");

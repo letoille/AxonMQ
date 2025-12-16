@@ -4,6 +4,7 @@ use super::QoS;
 use super::code::ReturnCode;
 use super::command::{BrokerAck, BrokerCommand, ClientCommand};
 use super::error::MqttProtocolError;
+use super::listener::store::Store;
 use super::protocol::{
     conn::{ConnAck, Connect},
     property::Property,
@@ -25,7 +26,7 @@ impl BrokerHelper {
         &self,
         connect: Connect,
         client_tx: mpsc::Sender<ClientCommand>,
-    ) -> Result<ConnAck, MqttProtocolError> {
+    ) -> Result<(ConnAck, Option<Store>), MqttProtocolError> {
         let (resp_tx, resp_rx) = oneshot::channel();
         self.broker_tx
             .send(BrokerCommand::Connect {
@@ -37,8 +38,8 @@ impl BrokerHelper {
             .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
 
         let result = resp_rx.await?;
-        if let BrokerAck::ConnAck(ack) = result {
-            Ok(ack)
+        if let BrokerAck::ConnAck(ack, store) = result {
+            Ok((ack, store))
         } else {
             Err(MqttProtocolError::InternalError)
         }
@@ -94,9 +95,14 @@ impl BrokerHelper {
         &self,
         client_id: &str,
         code: ReturnCode,
+        store: Store,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
-            .send(BrokerCommand::Disconnected(client_id.to_string(), code))
+            .send(BrokerCommand::Disconnected(
+                client_id.to_string(),
+                code,
+                store,
+            ))
             .await
             .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
         Ok(())

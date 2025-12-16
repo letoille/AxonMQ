@@ -12,7 +12,7 @@ use tokio_tungstenite::tungstenite::{
     Message as WsMessage,
     handshake::server::{Request, Response},
 };
-use tracing::{Instrument, debug, error, info};
+use tracing::{Instrument, debug, error, info, warn};
 
 use crate::CONFIG;
 use crate::mqtt::{
@@ -27,6 +27,7 @@ use crate::operator::helper::Helper as OperatorHelper;
 use crate::utils as g_utils;
 
 use super::shared::{get_packet_id, handle_message};
+use super::store::Store;
 use super::tcp::load_tls_acceptor;
 
 use tokio_util::codec::{Decoder, Encoder};
@@ -211,10 +212,11 @@ async fn handle_websocket_connection<S>(
     resend_tk.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     let mut version = MqttProtocolVersion::V3_1_1;
-    let mut keep_alive = 60u16;
+    let mut keep_alive = CONFIG.get().unwrap().mqtt.settings.keep_alive;
     let mut client_id = String::new();
     let mut client_rx = None;
     let mut inflight_maximum = 128u16;
+    let mut pre_store = None;
 
     let result = time::timeout(time::Duration::from_secs(3), async {
         loop {
@@ -228,7 +230,7 @@ async fn handle_websocket_connection<S>(
                                 let (client_tx, c_rx) = mpsc::channel::<ClientCommand>(128);
                                 client_rx = Some(c_rx);
 
-                                if let Ok(ack) = broker_helper.connect(conn.clone(), client_tx).await {
+                                if let Ok((ack, old_store)) = broker_helper.connect(conn.clone(), client_tx).await {
                                     if ack.return_code != ReturnCode::Success {
                                         debug!(parent: &span, "connection rejected: {}", ack.return_code);
                                         let mut write_buf = BytesMut::new();
@@ -238,19 +240,22 @@ async fn handle_websocket_connection<S>(
                                         return Err(());
                                     }
                                     version = conn.version;
-                                    keep_alive = conn.keep_alive;
+                                    if conn.keep_alive > keep_alive {
+                                        keep_alive = conn.keep_alive;
+                                    }
                                     client_id = conn.client_id.clone();
+                                    pre_store = old_store;
 
                                     if conn.version == MqttProtocolVersion::V5 {
                                         codec.with_v5();
                                     }
-                                    inflight_maximum = conn.inflight_maximum.unwrap_or(128);
-                                    codec.with_packet_size(conn.packet_maximum.unwrap_or(2 * 1024 * 1024));
+                                    inflight_maximum = conn.inflight_maximum;
+                                    codec.with_packet_size(conn.packet_maximum);
 
                                     let mut write_buf = BytesMut::new();
                                     codec.encode(Message::ConnAck(ack), &mut write_buf).unwrap();
                                     ws_stream.send(WsMessage::Binary(write_buf.freeze())).await.ok();
-                                    debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}", conn.version, keep_alive, conn.clean_start);
+                                    debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.session_expiry_interval);
                                     return Ok(()); // Handshake successful
                                 }
                             }
@@ -285,25 +290,46 @@ async fn handle_websocket_connection<S>(
         return;
     }
 
+    let mut message_store = Store::new(
+        inflight_maximum as usize,
+        CONFIG.get().unwrap().mqtt.settings.max_receive_queue as usize,
+    );
+    if let Some(pre_store) = pre_store {
+        message_store.extend(pre_store);
+    }
+
     let mut packet_id = 1;
-    let mut inflight_store: Vec<(u64, Message)> = Vec::new();
     let mut client_rx = client_rx.unwrap();
-    let mut qos2_msg_store: Vec<publish::Publish> = Vec::new();
+    let resend_time = CONFIG.get().unwrap().mqtt.settings.resend_interval;
+    let mut client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
+    let mut keepalive_tk = time::interval(time::Duration::from_secs(keep_alive as u64));
+    keepalive_tk.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
-            _ = resend_tk.tick(), if inflight_store.len() > 0 => {
+            _ = keepalive_tk.tick(), if coarsetime::Clock::now_since_epoch().as_secs() - client_msg_tm > (keep_alive * 3 / 2) as u64 => {
+                warn!(parent: &span, "keep alive timeout, disconnecting");
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, message_store).await.ok();
+                ws_stream.close(None).await.ok();
+                break;
+            }
+            _ = resend_tk.tick(), if message_store.inflight_size() > 0 => {
                 let now = coarsetime::Clock::now_since_epoch().as_secs();
-                for (tm, msg) in inflight_store.iter_mut() {
-                    if *tm + 2 < now {
+                for (pkid, msg) in message_store.get_inflight_messages(now, resend_time).into_iter() {
+                    if let Some(msg) = msg {
+                        let mut msg = Message::Publish(msg);
+                        msg.with_dup();
                         let mut write_buf = BytesMut::new();
                         codec.encode(msg.clone(), &mut write_buf).unwrap();
                         let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
-                        *tm = now;
+                    } else {
+                        let mut write_buf = BytesMut::new();
+                        codec.encode(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success, vec![])), &mut write_buf).unwrap();
+                        let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
                     }
                 }
             }
-            Some(command) = client_rx.recv(), if inflight_store.len() < inflight_maximum as usize => {
+            Some(command) = client_rx.recv() => {
                 match command {
                     ClientCommand::Disconnect(code) => {
                         let mut write_buf = BytesMut::new();
@@ -324,7 +350,7 @@ async fn handle_websocket_connection<S>(
                         } else {
                             None
                         };
-                        let msg = Message::Publish(publish::Publish::new(
+                        let publish = publish::Publish::new(
                             false,
                             qos,
                             retain,
@@ -332,15 +358,11 @@ async fn handle_websocket_connection<S>(
                             pid,
                             payload.clone(),
                             properties.clone(),
-                        ));
+                        );
                         if qos != QoS::AtMostOnce {
-                            if inflight_store.len() >= inflight_maximum as usize {
-                                let _ = inflight_store.remove(0);
-                            }
-                            let mut msg = msg.clone();
-                            msg.with_dup();
-                            inflight_store.push((coarsetime::Clock::now_since_epoch().as_secs(), msg));
+                            message_store.inflight_insert(publish.clone());
                         }
+                        let msg = Message::Publish(publish);
                         let mut write_buf = BytesMut::new();
                         codec.encode(msg, &mut write_buf).unwrap();
                         let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
@@ -359,12 +381,14 @@ async fn handle_websocket_connection<S>(
                                         let mut write_buf = BytesMut::new();
                                         codec.encode(Message::Disconnect(Disconnect::new(ReturnCode::PacketTooLarge)), &mut write_buf).unwrap();
                                         ws_stream.send(WsMessage::Binary(write_buf.freeze())).await.ok();
-                                        broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge).await.ok();
+                                        broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, message_store.clone()).await.ok();
                                         ws_stream.close(None).await.ok();
                                         break;
                                     }
 
-                                    let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut inflight_store, &mut qos2_msg_store, client_id.as_str(), msg).instrument(span.clone()).await;
+                                    client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
+
+                                    let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, client_id.as_str(), msg).instrument(span.clone()).await;
                                     match result {
                                         Ok(Some(resp)) => {
                                             let mut write_buf = BytesMut::new();
@@ -375,9 +399,9 @@ async fn handle_websocket_connection<S>(
                                         Err(e) => {
                                             debug!(parent: &span, "error handling message: {}", e);
                                             if let MqttProtocolError::Disconnected(code) = e {
-                                                broker_helper.disconnected(client_id.as_str(), code).await.ok();
+                                                broker_helper.disconnected(client_id.as_str(), code, message_store.clone()).await.ok();
                                             } else {
-                                                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
+                                                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store.clone()).await.ok();
                                             }
                                             ws_stream.close(None).await.ok();
                                             break;
@@ -395,7 +419,7 @@ async fn handle_websocket_connection<S>(
                     }
                     WsMessage::Close(_) => {
                         debug!(parent: &span, "client closed connection");
-                        broker_helper.disconnected(client_id.as_str(), ReturnCode::Success).await.ok();
+                        broker_helper.disconnected(client_id.as_str(), ReturnCode::Success, message_store).await.ok();
                         break;
                     }
                     WsMessage::Ping(data) => {
@@ -405,7 +429,7 @@ async fn handle_websocket_connection<S>(
                 }
             }
             else => {
-                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError).await.ok();
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
                 break;
             }
         }

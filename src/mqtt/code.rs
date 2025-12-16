@@ -14,6 +14,8 @@ pub enum ReturnCode {
     NotAuthorized = 5,              // connection refused, not authorized
     NoMatchSubscription = 16,       // v5
     NoSubscriptionExisted = 17,     // v5
+    ContinueAuth = 24,
+    ReAuth = 25,
     // v3 6-255: reserved
     UnspecifiedError = 128,
     MalformedPacket = 129,
@@ -27,18 +29,28 @@ pub enum ReturnCode {
     ServerBusy = 137,
     Banned = 138,
     BadAuthMethod = 140,
+    KeepAliveTimeout = 141,
     SessionTakenOver = 142,
     TopicFilterInvalid = 143,
     TopicNameInvalid = 144,
+    PacketIdInUse = 145,
     PacketIdentifierNotFound = 146,
+    ReceiveMaximumExceeded = 147,
+    TopicAliasInvalid = 148,
     PacketTooLarge = 149,
+    MessageRateTooHigh = 150,
     QuotaExceeded = 151,
+    AdministrativeAction = 152,
     PayloadFormatInvalid = 153,
     RetainNotSupported = 154,
     QoSNotSupported = 155,
     UseAnotherServer = 156,
     ServerMoved = 157,
+    SharedSubscriptionNotSupported = 158,
     ConnectionRateExceeded = 159,
+    MaxmumConnectTime = 160,
+    SubscriptionIdentifiersNotSupported = 161,
+    WildcardSubscriptionsNotSupported = 162,
 }
 
 impl ReturnCode {
@@ -108,6 +120,8 @@ impl std::fmt::Display for ReturnCode {
             ReturnCode::NotAuthorized => write!(f, "5: Connection Refused, Not Authorized"),
             ReturnCode::NoMatchSubscription => write!(f, "16: No Matching Subscription"),
             ReturnCode::NoSubscriptionExisted => write!(f, "17: No Subscription Existed"),
+            ReturnCode::ContinueAuth => write!(f, "24: Continue Authentication"),
+            ReturnCode::ReAuth => write!(f, "25: Re-Authenticate"),
             ReturnCode::UnspecifiedError => write!(f, "128: Unspecified Error"),
             ReturnCode::MalformedPacket => write!(f, "129: Malformed Packet"),
             ReturnCode::ProtocolError => write!(f, "130: Protocol Error"),
@@ -124,21 +138,39 @@ impl std::fmt::Display for ReturnCode {
             ReturnCode::ServerBusy => write!(f, "137: Server Busy"),
             ReturnCode::Banned => write!(f, "138: Banned"),
             ReturnCode::BadAuthMethod => write!(f, "140: Bad Authentication Method"),
+            ReturnCode::KeepAliveTimeout => write!(f, "141: Keep Alive Timeout"),
             ReturnCode::SessionTakenOver => write!(f, "142: Session Taken Over"),
             ReturnCode::TopicFilterInvalid => write!(f, "143: Topic Filter Invalid"),
             ReturnCode::TopicNameInvalid => write!(f, "144: Topic Name Invalid"),
+            ReturnCode::PacketIdInUse => write!(f, "145: Packet Identifier In Use"),
             ReturnCode::PacketIdentifierNotFound => {
                 write!(f, "146: Packet Identifier Not Found")
             }
+            ReturnCode::ReceiveMaximumExceeded => {
+                write!(f, "147: Receive Maximum Exceeded")
+            }
+            ReturnCode::TopicAliasInvalid => write!(f, "148: Topic Alias Invalid"),
             ReturnCode::PacketTooLarge => write!(f, "149: Packet Too Large"),
+            ReturnCode::MessageRateTooHigh => write!(f, "150: Message Rate Too High"),
             ReturnCode::QuotaExceeded => write!(f, "151: Quota Exceeded"),
+            ReturnCode::AdministrativeAction => write!(f, "152: Administrative Action"),
             ReturnCode::PayloadFormatInvalid => write!(f, "153: Payload Format Invalid"),
             ReturnCode::RetainNotSupported => write!(f, "154: Retain Not Supported"),
             ReturnCode::QoSNotSupported => write!(f, "155: QoS Not Supported"),
             ReturnCode::UseAnotherServer => write!(f, "156: Use Another Server"),
             ReturnCode::ServerMoved => write!(f, "157: Server Moved"),
+            ReturnCode::SharedSubscriptionNotSupported => {
+                write!(f, "158: Shared Subscription Not Supported")
+            }
             ReturnCode::ConnectionRateExceeded => {
                 write!(f, "159: Connection Rate Exceeded")
+            }
+            ReturnCode::MaxmumConnectTime => write!(f, "160: Maximum Connect Time"),
+            ReturnCode::SubscriptionIdentifiersNotSupported => {
+                write!(f, "161: Subscription Identifiers Not Supported")
+            }
+            ReturnCode::WildcardSubscriptionsNotSupported => {
+                write!(f, "162: Wildcard Subscriptions Not Supported")
             }
         }
     }

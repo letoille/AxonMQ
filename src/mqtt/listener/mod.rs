@@ -1,4 +1,5 @@
 mod shared;
+pub mod store;
 pub mod tcp;
 pub mod ws;
 

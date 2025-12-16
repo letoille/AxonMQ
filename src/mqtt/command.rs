@@ -8,8 +8,10 @@ use super::protocol::{
 };
 use super::{QoS, code::ReturnCode};
 
+use super::listener::store::Store;
+
 pub(crate) enum BrokerAck {
-    ConnAck(ConnAck),
+    ConnAck(ConnAck, Option<Store>),
     SubAck(SubAck),
     UnsubAck(UnsubAck),
 }
@@ -30,7 +32,7 @@ pub(crate) enum BrokerCommand {
         unsubscribe: Unsubscribe,
         resp: oneshot::Sender<BrokerAck>,
     },
-    Disconnected(String, ReturnCode),
+    Disconnected(String, ReturnCode, Store),
     WillPublish {
         client_id: String,
         retain: bool,

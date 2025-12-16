@@ -14,6 +14,7 @@ use super::{
     code::ReturnCode,
     command::{BrokerAck, BrokerCommand, ClientCommand},
     helper::BrokerHelper,
+    listener::store::Store,
     protocol::{
         conn::ConnAck,
         property::Property,
@@ -38,6 +39,8 @@ pub struct Client {
     client_helper: ClientHelper,
 
     will: Option<Will>,
+
+    store: Option<Store>,
 }
 
 pub struct Broker {
@@ -131,17 +134,18 @@ impl Broker {
                     }
                 }
 
-                let client = if connect.clean_start {
+                let mut client = if connect.clean_start {
                     Client {
                         client_id: connect.client_id.clone(),
                         version: connect.version,
                         connected: true,
                         disconnected_tm: 0,
                         clear_start: connect.clean_start,
-                        expiry: connect.session_expiry_interval.unwrap_or(0),
+                        expiry: connect.session_expiry_interval,
                         client_helper: ClientHelper::new(client_tx),
                         subscribes: HashMap::new(),
                         will: connect.will,
+                        store: None,
                     }
                 } else {
                     Client {
@@ -150,25 +154,29 @@ impl Broker {
                         connected: true,
                         disconnected_tm: 0,
                         clear_start: connect.clean_start,
-                        expiry: connect.session_expiry_interval.unwrap_or(0),
+                        expiry: connect.session_expiry_interval,
                         client_helper: ClientHelper::new(client_tx),
                         subscribes: old_client
                             .as_ref()
                             .map(|c| c.subscribes.clone())
                             .unwrap_or_default(),
                         will: connect.will,
+                        store: old_client.and_then(|c| c.store),
                     }
                 };
 
-                resp.send(BrokerAck::ConnAck(ConnAck::new(
-                    client.expiry > 0,
-                    ReturnCode::Success,
-                    if connect.generate_client_id {
-                        Some(client.client_id.clone())
-                    } else {
-                        None
-                    },
-                )))
+                resp.send(BrokerAck::ConnAck(
+                    ConnAck::new(
+                        client.expiry > 0,
+                        ReturnCode::Success,
+                        if connect.generate_client_id {
+                            Some(client.client_id.clone())
+                        } else {
+                            None
+                        },
+                    ),
+                    client.store.take(),
+                ))
                 .ok();
                 debug!(
                     "accept connected: {} [version: {}, clean: {}, expiry: {}]",
@@ -346,7 +354,7 @@ impl Broker {
                     resp.send(BrokerAck::UnsubAck(ack)).ok();
                 }
             }
-            Disconnected(client_id, code) => {
+            Disconnected(client_id, code, store) => {
                 if let Some(client) = clean_clients.remove(&client_id) {
                     let _ = operator_helper
                         .remove_client(client.client_id.clone())
@@ -362,8 +370,9 @@ impl Broker {
                     }
                 } else {
                     if let Some(client) = store_clients.get_mut(&client_id) {
-                        client.disconnected_tm = time::Instant::now().elapsed().as_secs();
+                        client.disconnected_tm = coarsetime::Clock::now_since_epoch().as_secs();
                         client.connected = false;
+                        client.store = Some(store);
 
                         if let Some(ref will) = client.will {
                             if code != ReturnCode::Success {
@@ -414,7 +423,7 @@ impl Broker {
                 if let Some(client) = store_clients.get(&client_id) {
                     if client.connected {
                         let _ = client.client_helper.send(msg);
-                    } else if client.expiry > 0 {
+                    } else {
                         let msgs = store_msgs.entry(client_id).or_insert_with(Vec::new);
                         if msgs.len()
                             >= CONFIG
@@ -437,7 +446,7 @@ impl Broker {
                 properties,
                 expiry_at,
             } => {
-                if payload.is_empty() {
+                if payload.is_empty() || expiry_at == Some(0) {
                     retain_trie.remove(&topic);
                 } else {
                     retain_trie.insert(
@@ -460,7 +469,13 @@ impl Broker {
         let mut store_clients = self.store_clients.take().unwrap();
         let mut clean_clients = self.clean_clients.take().unwrap();
 
-        let mut clean_tk = time::interval(time::Duration::from_secs(60));
+        let mut clean_tk = time::interval(time::Duration::from_secs(
+            CONFIG.get().unwrap().mqtt.settings.session_cleanup_interval,
+        ));
+        let mut retain_clean_tk = time::interval(time::Duration::from_secs(
+            CONFIG.get().unwrap().mqtt.settings.retain_cleanup_interval,
+        ));
+
         let broker_helper = self.get_helper();
         let mut store_msgs: HashMap<String, Vec<ClientCommand>> = HashMap::new();
         let mut retain_trie = self.retain_trie.take().unwrap();
@@ -473,6 +488,7 @@ impl Broker {
                     }
                     _ = clean_tk.tick() => {
                         let mut remove_ids = Vec::new();
+                        let now = coarsetime::Clock::now_since_epoch().as_secs();
                         store_clients.retain(|_, client| {
                             if client.connected {
                                 true
@@ -480,7 +496,6 @@ impl Broker {
                                 remove_ids.push(client.client_id.clone());
                                 false
                             } else {
-                                let now = time::Instant::now().elapsed().as_secs();
                                 let result = now - client.disconnected_tm < client.expiry as u64;
                                 if !result {
                                     remove_ids.push(client.client_id.clone());
@@ -492,6 +507,8 @@ impl Broker {
                             store_msgs.remove(&client_id);
                             let _ = operator_helper.remove_client(client_id).await;
                         }
+                    }
+                    _ = retain_clean_tk.tick() => {
                         retain_trie.purge_expired();
                     }
                 }

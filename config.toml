@@ -33,20 +33,25 @@ cert_path = "certs/server.crt"
 key_path = "certs/server.key"
 
 [mqtt.settings]
+# keep alive interval in seconds, if client specified value is smaller, override it
+keep_alive = 60
 # maximum topic length in characters, must be between 1 and 65535
 max_topic_length = 256
-# session expiry interval in seconds, 0 means use client specified value, >0 means override client specified value
-session_expiry_interval = 0
-# keep alive interval in seconds, 0 means use client specified value, >0 means override client specified value
-keep_alive = 60
-# maximum in-flight messages, must be between 1 and 65535
-max_receive_queue = 256
-# maximum packet size in bytes, default is 2MB, 2 * 1024 * 1024, must be between 1 and 268435455
+# session expiry interval in seconds, 0 means use client specified value, >0 means if client specified value is larger, override it, avoid unlimited session
+# default 7 days: 7 * 24 * 60 * 60 = 604800
+session_expiry_interval = 604800
+# maximum in-flight messages, must be between 1 and 65535, if client specified value is larger, override it
+max_receive_queue = 128
+# maximum packet size in bytes, default is 2MB, 2 * 1024 * 1024, must be between 1 and 268435455, if client specified value is larger, override it
 max_packet_size = 2097152
 # interval to resend QoS 1/2 messages in seconds
 resend_interval = 2
-# maximum number of stored messages per client for offline clients
+# maximum stored messages per client for offline clients, must be between 0 and 1000000, 0 means no limit
 max_store_msgs_per_client = 128
+# interval to clean up expired retained messages in seconds
+retain_cleanup_interval = 5
+# interval to clean up expired sessions for offline clients in seconds
+session_cleanup_interval = 60
 
 [mqtt.strategy]
 # strategy for shared subscription message delivery, "round_robin" or "random"

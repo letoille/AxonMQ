@@ -24,9 +24,9 @@ pub struct Connect {
 
     pub(crate) will: Option<Will>,
 
-    pub(crate) session_expiry_interval: Option<u32>,
-    pub(crate) inflight_maximum: Option<u16>,
-    pub(crate) packet_maximum: Option<u32>,
+    pub(crate) session_expiry_interval: u32,
+    pub(crate) inflight_maximum: u16,
+    pub(crate) packet_maximum: u32,
 }
 
 impl From<Connect> for Bytes {
@@ -95,14 +95,27 @@ impl Connect {
             properties = Property::try_from_properties(rdr)?;
         }
 
-        let mut session_expiry_interval = None;
-        let mut inflight_maximum = None;
-        let mut packet_maximum = None;
+        let mut session_expiry_interval =
+            CONFIG.get().unwrap().mqtt.settings.session_expiry_interval;
+        let mut inflight_maximum = CONFIG.get().unwrap().mqtt.settings.max_receive_queue;
+        let mut packet_maximum = CONFIG.get().unwrap().mqtt.settings.max_packet_size;
         for prop in properties.iter() {
             match prop {
-                Property::SessionExpiryInterval(v) => session_expiry_interval = Some(*v),
-                Property::MaximumPacketSize(v) => packet_maximum = Some(*v),
-                Property::ReceiveMaximum(v) => inflight_maximum = Some(*v),
+                Property::SessionExpiryInterval(v) => {
+                    if session_expiry_interval == 0 || *v < session_expiry_interval {
+                        session_expiry_interval = *v;
+                    }
+                }
+                Property::MaximumPacketSize(v) => {
+                    if packet_maximum == 0 || *v < packet_maximum {
+                        packet_maximum = *v;
+                    }
+                }
+                Property::ReceiveMaximum(v) => {
+                    if inflight_maximum == 0 || *v < inflight_maximum {
+                        inflight_maximum = *v;
+                    }
+                }
                 _ => {
                     debug!("ignore property in CONNECT: {}", prop);
                 }
@@ -193,7 +206,6 @@ impl Connect {
         let mut generate_client_id = false;
         let client_id = if client_id.len() == 0 {
             clean_session = true;
-            session_expiry_interval = Some(0);
             generate_client_id = true;
             utils::generate_random_client_id()
         } else {

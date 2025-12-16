@@ -1,7 +1,7 @@
-use tokio::sync::mpsc::Sender;
-use tracing::warn;
+use tokio::sync::mpsc::{Sender, error::TrySendError};
+use tracing::{debug, trace, warn};
 
-use crate::mqtt::{command::ClientCommand, helper::BrokerHelper};
+use crate::mqtt::{QoS, command::ClientCommand, helper::BrokerHelper};
 use crate::processor::message::Message;
 
 use super::Sink;
@@ -32,7 +32,7 @@ impl Sink for LocalClientSink {
             expiry_at: message.expiry_at,
         };
 
-        if persist && message.expiry_at.is_some() && message.expiry_at.unwrap() > 0 {
+        if persist && message.qos != QoS::AtMostOnce {
             if self.sender.try_send(msg.clone()).is_err() {
                 if let Err(e) = self.broker_helper.store_msg(&message.client_id, msg) {
                     warn!(
@@ -43,10 +43,20 @@ impl Sink for LocalClientSink {
             }
         } else {
             if let Err(e) = self.sender.try_send(msg) {
-                warn!(
-                    "failed to send message to client {}: {}",
-                    message.client_id, e
-                );
+                match e {
+                    TrySendError::Full(_) => {
+                        debug!(
+                            "message queue full for client {}, dropping message",
+                            message.client_id
+                        );
+                    }
+                    TrySendError::Closed(_) => {
+                        trace!(
+                            "client {} disconnected, dropping message",
+                            message.client_id
+                        );
+                    }
+                }
             }
         }
     }
