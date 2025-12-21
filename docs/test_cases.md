@@ -178,6 +178,18 @@ This document contains a series of test cases for verifying the core functionali
 *   **Expected Result**:
     *   Client B will **not** receive the retained message again upon successful reconnection.
 
+#### ✔️ **Case ID: RETAIN-5.5**
+*   **Description**: Verify that when a new client subscribes to a topic with a retained message, the retained message is sent **only** to the new subscriber and not to existing subscribers of that topic.
+*   **MQTT v5.0 Spec Reference**: Section `3.3.1.3 RETAIN` - The spec implies this by stating the message is sent "when a new subscription is established", targeting that specific subscription event.
+*   **Setup**:
+    *   1. Client A publishes a retained message to topic `T_RETAIN_BROADCAST`.
+    *   2. Client B subscribes to `T_RETAIN_BROADCAST` and receives the retained message. Client B remains connected and subscribed.
+*   **Action**:
+    *   A new client, Client C, subscribes to `T_RETAIN_BROADCAST`.
+*   **Expected Result**:
+    *   Client C receives the retained message.
+    *   Client B (the existing subscriber) does **not** receive the message again.
+
 ---
 
 ## Part 6: Shared Subscriptions
@@ -224,26 +236,35 @@ This document contains a series of test cases for verifying the core functionali
 
 **Objective**: To verify that the Broker correctly handles and maps topic aliases.
 
-#### ❌ **Case ID: ALIAS-8.1**
+#### ✔️ **Case ID: ALIAS-8.1**
 *   **Description**: Verify that the Broker can correctly route messages using a topic alias set by the client.
 *   **MQTT v5.0 Spec Reference**: Section `3.3.2.3.2 Topic Alias` - The client can use a topic alias instead of the topic name.
 *   **Setup**: Client C subscribes to a long topic name.
 *   **Action**: Client A publishes with the long topic name and alias 1 -> Client A publishes with an empty topic name and alias 1.
 *   **Expected Result**: Client C receives two messages.
 
-#### ❌ **Case ID: ALIAS-8.2**
-*   **Description**: Verify that the Broker correctly handles an alias that exceeds its `Topic Alias Maximum` limit.
-*   **MQTT v5.0 Spec Reference**: Sections `3.2.2.3.4 Topic Alias Maximum` & `4.13.1.2.10 Topic Alias invalid`.
-*   **Setup**: The Broker declares `Topic Alias Maximum` as 10 in the `CONNACK`.
-*   **Action**: Client A publishes a message using `Topic Alias` 11.
-*   **Expected Result**: The Broker should disconnect the client with reason code `0x93` (Topic Alias invalid).
+#### ✔️ **Case ID: ALIAS-8.2**
+*   **Description**: Verify when the client attempts to establish more aliases than the Broker's `Topic Alias Maximum` limit, the Broker correctly handles it.
+*   **MQTT v5.0 Spec Reference**: Sections `3.1.2.11.2 Topic Alias` & `3.2.2.3.4 Topic Alias Maximum`.
+*   **Setup**: Broker declares `Topic Alias Maximum = 10` in `CONNACK`.
+*   **Action**:
+    1.  Client A establishes 10 unique topic-to-alias mappings by sending 10 `PUBLISH` packets, each with a unique topic (`topic/1` to `topic/10`) and a unique alias (`1` to `10`).
+    2.  Client A then sends an 11th `PUBLISH` packet with a new topic (`topic/11`) and a new alias (`11`).
+*   **Expected Result**: Broker should disconnect Client A with reason code `0x94` (Topic Alias Invalid) upon receiving the 11th `PUBLISH` packet.
 
-#### ❌ **Case ID: ALIAS-8.3**
+#### ✔️ **Case ID: ALIAS-8.3**
 *   **Description**: Verify that the Broker correctly handles the re-mapping of an alias.
 *   **MQTT v5.0 Spec Reference**: Section `3.3.2.3.2 Topic Alias` - If the topic name is not empty, the Broker updates the mapping.
 *   **Setup**: Client C subscribes to `topic/1` and `topic/2`.
 *   **Action**: Client A publishes to `topic/1` with alias 1 -> Client A publishes to `topic/2` with alias 1 -> Client A publishes with an empty topic name and alias 1.
 *   **Expected Result**: `topic/1` receives the first message, and `topic/2` receives the next two messages.
+
+#### ✔️ **Case ID: ALIAS-8.4**
+*   **Description**: Verify that the Broker closes the connection if a Client sends a PUBLISH packet with Topic Alias = 0.
+*   **MQTT v5.0 Spec Reference**: Section `3.3.2.3.4 Topic Alias` - "A Topic Alias of 0 is not permitted. If a Client sends a PUBLISH packet containing a Topic Alias which has the value 0, the Server MUST close the Network Connection [MQTT-3.3.2.3.4-1]."
+*   **Setup**: Client A connects to the Broker.
+*   **Action**: Client A sends a `PUBLISH` packet with `Topic Alias = 0`.
+*   **Expected Result**: The Broker MUST close the Network Connection, and send a DISCONNECT packet with reason code `0x94` (Topic Alias Invalid).
 
 ---
 
@@ -251,7 +272,7 @@ This document contains a series of test cases for verifying the core functionali
 
 **Objective**: To verify that the Broker adheres to the `Receive Maximum` limit.
 
-#### ❌ **Case ID: FLOW-9.1**
+#### ✔️ **Case ID: FLOW-9.1**
 *   **Description**: Verify that the Broker does not exceed the client's `Receive Maximum` limit when sending offline messages.
 *   **MQTT v5.0 Spec Reference**: Section `3.2.2.3.3 Receive Maximum` - The sender must not send more unacknowledged QoS>0 messages than this value at any time.
 *   **Setup**:
@@ -261,7 +282,7 @@ This document contains a series of test cases for verifying the core functionali
 *   **Action**: Client A reconnects before the session expires, setting `Receive Maximum` to 5 in the `CONNECT` packet.
 *   **Expected Result**: The Broker sends a maximum of 5 `PUBLISH` messages, and continues sending the remaining messages only after receiving `PUBACK` from the client.
 
-#### ❌ **Case ID: FLOW-9.2**
+#### ✔️ **Case ID: FLOW-9.2**
 *   **Description**: Verify that the Broker enforces its own `Receive Maximum` limit set in the `CONNACK` packet.
 *   **MQTT v5.0 Spec Reference**: Sections `3.2.2.3.3 Receive Maximum` & `4.13.1.2.19 Receive Maximum exceeded`.
 *   **Setup**: The Broker declares `Receive Maximum` as 5 to Client A in the `CONNACK` packet.

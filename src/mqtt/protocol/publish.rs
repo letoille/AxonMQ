@@ -13,6 +13,8 @@ pub struct Publish {
     pub(crate) retain: bool,
 
     pub(crate) topic: String,
+    pub(crate) topic_alias: Option<u16>,
+
     pub(crate) packet_id: Option<u16>,
     pub(crate) payload: Bytes,
 
@@ -50,6 +52,7 @@ impl Publish {
             payload,
             properties,
             expiry_at: None,
+            topic_alias: None,
         }
     }
 
@@ -106,9 +109,13 @@ impl Publish {
     ) -> Result<Message, MqttProtocolError> {
         let topic_len = rdr.read_u16::<BigEndian>()?;
         let mut topic = vec![0u8; topic_len as usize];
-        rdr.read_exact(&mut topic)?;
 
-        let topic = String::from_utf8(topic).map_err(|_| MqttProtocolError::InvalidTopicFilter)?;
+        let topic = if topic_len > 0 {
+            rdr.read_exact(&mut topic)?;
+            String::from_utf8(topic).map_err(|_| MqttProtocolError::InvalidTopicFilter)?
+        } else {
+            String::new()
+        };
 
         let packet_id = if qos != QoS::AtMostOnce {
             let pid = rdr.read_u16::<BigEndian>()?;
@@ -119,14 +126,28 @@ impl Publish {
 
         let mut properties = Vec::new();
         let mut expiry_at = None;
+        let mut topic_alias: Option<u16> = None;
+
         if version == MqttProtocolVersion::V5 {
             properties = Property::try_from_properties(rdr)?;
             for prop in properties.iter() {
-                if let Property::MessageExpiryInterval(v) = prop {
-                    expiry_at = Some(coarsetime::Clock::now_since_epoch().as_secs() + *v as u64);
+                match prop {
+                    Property::MessageExpiryInterval(v) => {
+                        expiry_at =
+                            Some(coarsetime::Clock::now_since_epoch().as_secs() + *v as u64);
+                    }
+                    Property::TopicAlias(v) => {
+                        topic_alias = Some(*v);
+                    }
+                    _ => {}
                 }
             }
-            properties.retain(|p| !matches!(p, Property::MessageExpiryInterval(_)));
+            properties.retain(|p| {
+                !matches!(
+                    p,
+                    Property::MessageExpiryInterval(_) | Property::TopicAlias(_)
+                )
+            });
         };
         let end_offset = rdr.position() as usize;
         let payload = rdr.get_ref().slice(end_offset..);
@@ -140,6 +161,7 @@ impl Publish {
             payload,
             properties,
             expiry_at,
+            topic_alias,
         };
 
         Ok(Message::Publish(publish))

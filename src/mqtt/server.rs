@@ -174,6 +174,7 @@ impl Broker {
                         } else {
                             None
                         },
+                        connect.topic_alias_maximum,
                     ),
                     client.store.take(),
                 ))
@@ -276,17 +277,17 @@ impl Broker {
                                     .await;
 
                                 for msg in msgs {
-                                    let _ = operator_helper
-                                        .publish(
-                                            client_id.clone(),
-                                            true,
-                                            msg.qos,
-                                            msg.topic.clone(),
-                                            msg.payload.clone(),
-                                            msg.properties.clone(),
-                                            msg.expiry_at,
-                                        )
-                                        .await;
+                                    client
+                                        .client_helper
+                                        .send(ClientCommand::Publish {
+                                            retain: true,
+                                            qos: msg.qos,
+                                            topic: msg.topic.clone(),
+                                            payload: msg.payload.clone(),
+                                            properties: msg.properties.clone(),
+                                            expiry_at: msg.expiry_at,
+                                        })
+                                        .ok();
                                 }
                                 client
                                     .subscribes

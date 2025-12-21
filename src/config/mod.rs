@@ -110,6 +110,7 @@ pub struct MqttSettings {
     pub max_store_msgs_per_client: usize,
     pub retain_cleanup_interval: u64,
     pub session_cleanup_interval: u64,
+    pub topic_alias_maximum: u16,
 }
 
 impl Config {

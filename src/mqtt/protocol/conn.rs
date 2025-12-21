@@ -27,6 +27,8 @@ pub struct Connect {
     pub(crate) session_expiry_interval: u32,
     pub(crate) inflight_maximum: u16,
     pub(crate) packet_maximum: u32,
+
+    pub(crate) topic_alias_maximum: u16,
 }
 
 impl From<Connect> for Bytes {
@@ -99,6 +101,8 @@ impl Connect {
             CONFIG.get().unwrap().mqtt.settings.session_expiry_interval;
         let mut inflight_maximum = CONFIG.get().unwrap().mqtt.settings.max_receive_queue;
         let mut packet_maximum = CONFIG.get().unwrap().mqtt.settings.max_packet_size;
+        let mut topic_alias_maximum = 0;
+
         for prop in properties.iter() {
             match prop {
                 Property::SessionExpiryInterval(v) => {
@@ -114,6 +118,14 @@ impl Connect {
                 Property::ReceiveMaximum(v) => {
                     if inflight_maximum == 0 || *v < inflight_maximum {
                         inflight_maximum = *v;
+                    }
+                }
+                Property::TopicAliasMaximum(v) => {
+                    if *v <= CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum {
+                        topic_alias_maximum = *v;
+                    } else {
+                        topic_alias_maximum =
+                            CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum;
                     }
                 }
                 _ => {
@@ -224,6 +236,7 @@ impl Connect {
             inflight_maximum,
             packet_maximum,
             generate_client_id,
+            topic_alias_maximum,
         }))
     }
 }
@@ -270,6 +283,7 @@ pub struct ConnAck {
     session_present: bool,
     pub(crate) return_code: ReturnCode,
     generated_client_id: Option<String>,
+    pub(crate) topic_alias_maximum: u16,
 }
 
 impl ConnAck {
@@ -277,11 +291,13 @@ impl ConnAck {
         session_present: bool,
         return_code: ReturnCode,
         generated_client_id: Option<String>,
+        topic_alias_maximum: u16,
     ) -> Self {
         ConnAck {
             session_present,
             return_code,
             generated_client_id,
+            topic_alias_maximum,
         }
     }
 
@@ -298,7 +314,7 @@ impl ConnAck {
                 Property::SessionExpiryInterval(config.mqtt.settings.session_expiry_interval),
                 Property::ServerKeepAlive(config.mqtt.settings.keep_alive),
                 Property::ReceiveMaximum(config.mqtt.settings.max_receive_queue),
-                Property::TopicAliasMaximum(0),
+                Property::TopicAliasMaximum(self.topic_alias_maximum),
                 Property::RetainAvailable(1),
                 Property::WildcardSubscriptionAvailable(1),
                 Property::SubscriptionIdentifierAvailable(1),

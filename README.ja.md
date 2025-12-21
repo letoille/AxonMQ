@@ -56,6 +56,7 @@ graph TD
 | 永続セッション (Persistent) |    ✔️     | `clean_start = false` の場合        |
 | 共有サブスクリプション (Shared) |    ✔️     | MQTT v5 機能 (`$share/...`)         |
 | メッセージ有効期限 (Expiry) |    ✔️     | MQTT v5 機能                        |
+| トピックエイリアス (Topic Alias) |    ✔️     | MQTT v5 機能                   |
 
 ### 📚 ドキュメンテーション
 
@@ -63,7 +64,9 @@ graph TD
 
 - **[ルーターガイド](./docs/router.md)**: ルーティングルールの設定方法を学びます。
 - **[プロセッサーガイド](./docs/processor.md)**: ネイティブRustまたはWebAssembly（WASM）でデータパイプラインを拡張する方法を理解します。
+- **[Sparkplug B ガイド](./docs/sparkplugb/overview.md)**: 内蔵のSparkplug Bホストアプリケーションについて理解する。
 - **[CLI 利用ガイド](./docs/cli-usage.md)**: コマンドラインインターフェースの利用方法を学ぶ。
+- **[MQTTテストケース](./docs/test_cases.md)**: MQTTコンプライアンスに関する詳細なテストケース。
 
 ### 🚀 クイックスタート
 

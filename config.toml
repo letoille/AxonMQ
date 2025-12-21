@@ -52,6 +52,8 @@ max_store_msgs_per_client = 128
 retain_cleanup_interval = 5
 # interval to clean up expired sessions for offline clients in seconds
 session_cleanup_interval = 60
+# maximum number of topic aliases per client, must be between 0 and 65535, 0 means topic alias feature is disabled, if client specified value is larger, override it
+topic_alias_maximum = 30
 
 [mqtt.strategy]
 # strategy for shared subscription message delivery, "round_robin" or "random"

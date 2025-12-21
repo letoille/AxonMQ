@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use bytes::BytesMut;
@@ -218,6 +219,9 @@ async fn handle_websocket_connection<S>(
     let mut inflight_maximum = 128u16;
     let mut pre_store = None;
 
+    let mut client_topic_alias: HashMap<u16, String> = HashMap::new();
+    let mut client_topic_alias_maximum: u16 = 0;
+
     let result = time::timeout(time::Duration::from_secs(3), async {
         loop {
             if let Some(Ok(ws_msg)) = ws_stream.next().await {
@@ -248,6 +252,7 @@ async fn handle_websocket_connection<S>(
 
                                     if conn.version == MqttProtocolVersion::V5 {
                                         codec.with_v5();
+                                        client_topic_alias_maximum = ack.topic_alias_maximum;
                                     }
                                     inflight_maximum = conn.inflight_maximum;
                                     codec.with_packet_size(conn.packet_maximum);
@@ -360,12 +365,18 @@ async fn handle_websocket_connection<S>(
                             properties.clone(),
                         );
                         if qos != QoS::AtMostOnce {
-                            message_store.inflight_insert(publish.clone());
+                            if message_store.inflight_insert(publish.clone()) {
+                                let msg = Message::Publish(publish);
+                                let mut write_buf = BytesMut::new();
+                                codec.encode(msg, &mut write_buf).unwrap();
+                                let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
+                            }
+                        } else {
+                            let msg = Message::Publish(publish);
+                            let mut write_buf = BytesMut::new();
+                            codec.encode(msg, &mut write_buf).unwrap();
+                            let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
                         }
-                        let msg = Message::Publish(publish);
-                        let mut write_buf = BytesMut::new();
-                        codec.encode(msg, &mut write_buf).unwrap();
-                        let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
                     }
                 }
             }
@@ -388,7 +399,7 @@ async fn handle_websocket_connection<S>(
 
                                     client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
 
-                                    let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, client_id.as_str(), msg).instrument(span.clone()).await;
+                                    let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, &mut client_topic_alias, client_topic_alias_maximum, client_id.as_str(), msg).instrument(span.clone()).await;
                                     match result {
                                         Ok(Some(resp)) => {
                                             let mut write_buf = BytesMut::new();

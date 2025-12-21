@@ -41,8 +41,12 @@ impl Store {
         let mut msgs = Vec::new();
         for (pkid, (tm, msg)) in self.inflight_store.iter_mut() {
             if *tm + resend_interval < now {
-                msgs.push((*pkid, msg.clone()));
-                *tm = now;
+                if msgs.len() < self.inflight_size {
+                    msgs.push((*pkid, msg.clone()));
+                    *tm = now;
+                } else {
+                    break;
+                }
             }
         }
         msgs
@@ -74,14 +78,17 @@ impl Store {
         }
     }
 
-    pub fn inflight_insert(&mut self, msg: publish::Publish) {
+    pub fn inflight_insert(&mut self, mut msg: publish::Publish) -> bool {
         if self.inflight_store.len() < self.inflight_size {
+            msg.dup = true;
             self.inflight_store.insert(
                 msg.packet_id.unwrap_or(0),
                 (coarsetime::Clock::now_since_epoch().as_secs(), Some(msg)),
             );
+            true
         } else {
             self.backup_store.push(msg);
+            false
         }
     }
 

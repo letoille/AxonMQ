@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use coarsetime;
@@ -48,6 +49,9 @@ pub async fn process_client<S>(
     let mut inflight_maximum = 128u16;
     let mut pre_store = None;
 
+    let mut client_topic_alias: HashMap<u16, String> = HashMap::new();
+    let mut client_topic_alias_maximum: u16 = 0;
+
     let result = time::timeout(time::Duration::from_secs(3), async {
         let msg = async_client.framed.next().await;
         if msg.is_none() || msg.as_ref().unwrap().is_err() {
@@ -81,6 +85,7 @@ pub async fn process_client<S>(
 
                 if conn.version == MqttProtocolVersion::V5 {
                     async_client.framed.codec_mut().with_v5();
+                    client_topic_alias_maximum = ack.topic_alias_maximum;
                 }
                 inflight_maximum = conn.inflight_maximum;
                 async_client.framed.codec_mut().with_packet_size(conn.packet_maximum);
@@ -132,8 +137,7 @@ pub async fn process_client<S>(
                 let now = coarsetime::Clock::now_since_epoch().as_secs();
                 for (pkid, msg) in message_store.get_inflight_messages(now, resend_time).into_iter() {
                     if let Some(msg) = msg {
-                        let mut msg = Message::Publish(msg);
-                        msg.with_dup();
+                        let msg = Message::Publish(msg);
                         let _ = async_client.framed.send(msg).await;
                     } else {
                         let _ = async_client.framed.send(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success, vec![]))).await;
@@ -169,10 +173,14 @@ pub async fn process_client<S>(
                             properties.clone(),
                         );
                         if qos != QoS::AtMostOnce {
-                            message_store.inflight_insert(publish.clone());
+                            if message_store.inflight_insert(publish.clone()) {
+                                let msg = Message::Publish(publish);
+                                let _ = async_client.framed.send(msg).await;
+                            }
+                        } else {
+                            let msg = Message::Publish(publish);
+                            let _ = async_client.framed.send(msg).await;
                         }
-                        let msg = Message::Publish(publish);
-                        let _ = async_client.framed.send(msg).await;
                     }
                 }
             }
@@ -198,7 +206,7 @@ pub async fn process_client<S>(
 
                 client_msg_tm = coarsetime::Clock::now_since_epoch().as_secs();
 
-                let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, client_id.as_str(), msg).instrument(span.clone()).await;
+                let result = handle_message(broker_helper.clone(), operator_helper.clone(), &mut message_store, &mut client_topic_alias, client_topic_alias_maximum, client_id.as_str(), msg).instrument(span.clone()).await;
                 match result {
                     Ok(Some(resp)) => {
                         let _ = async_client.framed.send(resp).await;
@@ -224,6 +232,8 @@ pub async fn handle_message(
     broker_helper: BrokerHelper,
     operator_helper: OperatorHelper,
     message_store: &mut Store,
+    client_topic_alias: &mut HashMap<u16, String>,
+    client_topic_alias_maximum: u16,
     client_id: &str,
     msg: Message,
 ) -> Result<Option<Message>, MqttProtocolError> {
@@ -255,19 +265,51 @@ pub async fn handle_message(
             let ack = broker_helper.unsubscribe(client_id, unsub).await?;
             Ok(Some(Message::UnsubAck(ack)))
         }
-        Message::Publish(publish) => {
-            if !utils::pub_topic_valid(&publish.topic) {
+        Message::Publish(mut publish) => {
+            if let Some(topic_alias) = publish.topic_alias {
+                if topic_alias == 0 {
+                    return Err(MqttProtocolError::Disconnected(
+                        ReturnCode::TopicAliasInvalid,
+                    ));
+                }
+
+                if publish.topic.is_empty() {
+                    if client_topic_alias.contains_key(&topic_alias) {
+                        publish.topic = client_topic_alias.get(&topic_alias).unwrap().clone();
+                    }
+                } else {
+                    if utils::pub_topic_valid(&publish.topic) {
+                        if client_topic_alias.contains_key(&topic_alias) {
+                            client_topic_alias.insert(topic_alias, publish.topic.clone());
+                        } else {
+                            if client_topic_alias.len() < client_topic_alias_maximum as usize {
+                                client_topic_alias.insert(topic_alias, publish.topic.clone());
+                            } else {
+                                return Err(MqttProtocolError::Disconnected(
+                                    ReturnCode::TopicAliasInvalid,
+                                ));
+                            }
+                        }
+                    } else {
+                        publish.topic = String::new();
+                    }
+                }
+            }
+
+            if publish.topic_alias.is_some() && publish.topic.is_empty()
+                || !utils::pub_topic_valid(&publish.topic)
+            {
                 if publish.qos == QoS::AtLeastOnce {
                     let pub_ack = publish::PubAck::new(
                         publish.packet_id.unwrap_or(0),
-                        ReturnCode::TopicFilterInvalid,
+                        ReturnCode::TopicNameInvalid,
                         vec![],
                     );
                     return Ok(Some(Message::PubAck(pub_ack)));
                 } else if publish.qos == QoS::ExactlyOnce {
                     let pub_rec = publish::PubRec::new(
                         publish.packet_id.unwrap_or(0),
-                        ReturnCode::TopicFilterInvalid,
+                        ReturnCode::TopicNameInvalid,
                         vec![],
                     );
                     return Ok(Some(Message::PubRec(pub_rec)));
@@ -275,6 +317,7 @@ pub async fn handle_message(
                     return Ok(None);
                 }
             }
+
             if publish.qos == QoS::AtLeastOnce {
                 let pub_ack = publish::PubAck::new(
                     publish.packet_id.unwrap_or(0),
@@ -317,15 +360,19 @@ pub async fn handle_message(
                     return Ok(Some(Message::PubRec(pub_rec)));
                 }
 
-                let mut pub_rec = publish::PubRec::new(
+                let pub_rec = publish::PubRec::new(
                     publish.packet_id.unwrap_or(0),
                     ReturnCode::Success,
                     vec![],
                 );
+
                 if !message_store.qos2_insert(publish) {
-                    pub_rec.reason_code = ReturnCode::ReceiveMaximumExceeded;
-                };
-                Ok(Some(Message::PubRec(pub_rec)))
+                    Err(MqttProtocolError::Disconnected(
+                        ReturnCode::ReceiveMaximumExceeded,
+                    ))
+                } else {
+                    Ok(Some(Message::PubRec(pub_rec)))
+                }
             } else {
                 if publish.retain {
                     broker_helper
