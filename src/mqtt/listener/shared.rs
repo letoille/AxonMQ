@@ -140,7 +140,7 @@ pub async fn process_client<S>(
                         let msg = Message::Publish(msg);
                         let _ = async_client.framed.send(msg).await;
                     } else {
-                        let _ = async_client.framed.send(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success, vec![]))).await;
+                        let _ = async_client.framed.send(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success))).await;
                     }
                 }
             }
@@ -151,7 +151,7 @@ pub async fn process_client<S>(
                         async_client.framed.close().await.ok();
                         break;
                     }
-                    ClientCommand::Publish{qos, retain, topic, payload, properties, expiry_at} => {
+                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, expiry_at, subscription_identifier}=> {
                         if let Some(expiry_at) = expiry_at {
                             if expiry_at != 0 && expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
@@ -170,8 +170,8 @@ pub async fn process_client<S>(
                             topic.clone(),
                             pid,
                             payload.clone(),
-                            properties.clone(),
-                        );
+                            user_properties.clone(),
+                        ).with_subscription_identifier(subscription_identifier);
                         if qos != QoS::AtMostOnce {
                             if message_store.inflight_insert(publish.clone()) {
                                 let msg = Message::Publish(publish);
@@ -303,14 +303,12 @@ pub async fn handle_message(
                     let pub_ack = publish::PubAck::new(
                         publish.packet_id.unwrap_or(0),
                         ReturnCode::TopicNameInvalid,
-                        vec![],
                     );
                     return Ok(Some(Message::PubAck(pub_ack)));
                 } else if publish.qos == QoS::ExactlyOnce {
                     let pub_rec = publish::PubRec::new(
                         publish.packet_id.unwrap_or(0),
                         ReturnCode::TopicNameInvalid,
-                        vec![],
                     );
                     return Ok(Some(Message::PubRec(pub_rec)));
                 } else {
@@ -319,18 +317,15 @@ pub async fn handle_message(
             }
 
             if publish.qos == QoS::AtLeastOnce {
-                let pub_ack = publish::PubAck::new(
-                    publish.packet_id.unwrap_or(0),
-                    ReturnCode::Success,
-                    vec![],
-                );
+                let pub_ack =
+                    publish::PubAck::new(publish.packet_id.unwrap_or(0), ReturnCode::Success);
                 if publish.retain {
                     broker_helper
                         .retain_message(
                             publish.topic.clone(),
                             publish.qos,
                             publish.payload.clone(),
-                            publish.properties.clone(),
+                            publish.user_properties.clone(),
                             publish.expiry_at,
                         )
                         .await
@@ -344,7 +339,7 @@ pub async fn handle_message(
                         publish.qos,
                         publish.topic.clone(),
                         publish.payload,
-                        publish.properties,
+                        publish.user_properties,
                         publish.expiry_at,
                     )
                     .await
@@ -352,19 +347,13 @@ pub async fn handle_message(
                 Ok(Some(Message::PubAck(pub_ack)))
             } else if publish.qos == QoS::ExactlyOnce {
                 if message_store.qos2_contains(publish.packet_id.unwrap()) {
-                    let pub_rec = publish::PubRec::new(
-                        publish.packet_id.unwrap_or(0),
-                        ReturnCode::Success,
-                        vec![],
-                    );
+                    let pub_rec =
+                        publish::PubRec::new(publish.packet_id.unwrap_or(0), ReturnCode::Success);
                     return Ok(Some(Message::PubRec(pub_rec)));
                 }
 
-                let pub_rec = publish::PubRec::new(
-                    publish.packet_id.unwrap_or(0),
-                    ReturnCode::Success,
-                    vec![],
-                );
+                let pub_rec =
+                    publish::PubRec::new(publish.packet_id.unwrap_or(0), ReturnCode::Success);
 
                 if !message_store.qos2_insert(publish) {
                     Err(MqttProtocolError::Disconnected(
@@ -380,7 +369,7 @@ pub async fn handle_message(
                             publish.topic.clone(),
                             publish.qos,
                             publish.payload.clone(),
-                            publish.properties.clone(),
+                            publish.user_properties.clone(),
                             publish.expiry_at,
                         )
                         .await
@@ -393,7 +382,7 @@ pub async fn handle_message(
                         publish.qos,
                         publish.topic.clone(),
                         publish.payload,
-                        publish.properties,
+                        publish.user_properties,
                         publish.expiry_at,
                     )
                     .await
@@ -411,7 +400,7 @@ pub async fn handle_message(
         }
         Message::PubRec(pubrec) => {
             message_store.inflight_rec(pubrec.packet_id);
-            let pub_rel = publish::PubRel::new(pubrec.packet_id, ReturnCode::Success, vec![]);
+            let pub_rel = publish::PubRel::new(pubrec.packet_id, ReturnCode::Success);
             Ok(Some(Message::PubRel(pub_rel)))
         }
         Message::PubRel(pubrel) => {
@@ -423,7 +412,6 @@ pub async fn handle_message(
                 } else {
                     ReturnCode::Success
                 },
-                vec![],
             );
             if let Some(publish) = publish_msg {
                 operator_helper
@@ -433,7 +421,7 @@ pub async fn handle_message(
                         publish.qos,
                         publish.topic,
                         publish.payload,
-                        publish.properties,
+                        publish.user_properties,
                         publish.expiry_at,
                     )
                     .await

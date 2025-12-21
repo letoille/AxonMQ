@@ -25,6 +25,7 @@ pub struct Subscriber {
 
     qos: QoS,
     no_local: bool,
+    subscription_id: Option<u32>,
     persist: bool,
 
     sink: Box<dyn Sink>,
@@ -37,6 +38,7 @@ impl Subscriber {
             share_group,
             topic: String::new(),
             no_local: false,
+            subscription_id: None,
             sink: DefaultSink::new(),
             qos: QoS::AtMostOnce,
             persist: false,
@@ -114,6 +116,7 @@ impl Matcher {
                 topic,
                 qos,
                 no_local,
+                subscription_id,
                 persist,
                 sink,
             } => {
@@ -131,6 +134,7 @@ impl Matcher {
                         topic: topic.clone(),
                         qos,
                         no_local,
+                        subscription_id,
                         persist,
                         sink,
                     },
@@ -162,7 +166,7 @@ impl Matcher {
                 qos,
                 topic,
                 payload,
-                properties,
+                user_properties,
                 expiry_at,
             } => {
                 let (clients_iters, group_clients_map) =
@@ -182,8 +186,9 @@ impl Matcher {
                             retain,
                             expiry_at,
                             payload.clone(),
-                            properties.clone(),
-                        ),
+                            user_properties.clone(),
+                        )
+                        .with_subscription_identifier(client.subscription_id),
                         client.persist,
                     );
                 }
@@ -203,8 +208,9 @@ impl Matcher {
                             retain,
                             expiry_at,
                             payload.clone(),
-                            properties.clone(),
-                        ),
+                            user_properties.clone(),
+                        )
+                        .with_subscription_identifier(client.subscription_id),
                         client.persist,
                     );
                 }

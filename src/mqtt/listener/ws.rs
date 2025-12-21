@@ -329,7 +329,7 @@ async fn handle_websocket_connection<S>(
                         let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
                     } else {
                         let mut write_buf = BytesMut::new();
-                        codec.encode(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success, vec![])), &mut write_buf).unwrap();
+                        codec.encode(Message::PubRel(publish::PubRel::new(pkid, ReturnCode::Success)), &mut write_buf).unwrap();
                         let _ = ws_stream.send(WsMessage::Binary(write_buf.freeze())).await;
                     }
                 }
@@ -343,7 +343,7 @@ async fn handle_websocket_connection<S>(
                         ws_stream.close(None).await.ok();
                         break;
                     }
-                    ClientCommand::Publish{qos, retain, topic, payload, properties, expiry_at} => {
+                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, expiry_at, ..} => {
                         if let Some(expiry_at) = expiry_at {
                             if expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
@@ -362,7 +362,7 @@ async fn handle_websocket_connection<S>(
                             topic.clone(),
                             pid,
                             payload.clone(),
-                            properties.clone(),
+                            user_properties.clone(),
                         );
                         if qos != QoS::AtMostOnce {
                             if message_store.inflight_insert(publish.clone()) {

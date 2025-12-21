@@ -151,7 +151,7 @@ impl Router {
             loop {
                 tokio::select! {
                     Some(cmd) = command_rx.recv() => {
-                        if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, properties, expiry_at} = cmd {
+                        if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, user_properties, expiry_at} = cmd {
                             if let Some(ref sparkplug_helper) = sparkplug_helper {
                                 if sparkplug_helper.is_sparkplug_b_topic(&topic) {
                                     sparkplug_helper.publish(
@@ -172,7 +172,7 @@ impl Router {
                                     retain,
                                     expiry_at,
                                     payload.clone(),
-                                    properties.clone(),
+                                    user_properties.clone(),
                                 );
 
                                 tokio::spawn( Self::chains_process(chains, msg, matcher_sender.clone()));
@@ -183,7 +183,7 @@ impl Router {
                                     qos,
                                     topic,
                                     payload,
-                                    properties,
+                                    user_properties,
                                     expiry_at,
                                 }).await.ok();
                             }
@@ -208,7 +208,7 @@ impl Router {
                                     qos,
                                     topic,
                                     payload,
-                                    properties: vec![],
+                                    user_properties: vec![],
                                     expiry_at: None,
                                 }).await.ok();
                             }
@@ -346,7 +346,7 @@ impl Router {
                             qos: msg.qos,
                             topic: msg.topic,
                             payload: msg.payload,
-                            properties: msg.properties,
+                            user_properties: msg.user_properties,
                             expiry_at: msg.expiry_at,
                         })
                         .await

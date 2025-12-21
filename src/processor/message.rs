@@ -4,7 +4,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use crate::mqtt::{QoS, protocol::property::Property};
+use crate::mqtt::{QoS, protocol::property::PropertyUser};
 use crate::utils;
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -65,7 +65,9 @@ pub struct Message {
     pub expiry_at: Option<u64>,
 
     pub payload: Bytes,
-    pub properties: Vec<Property>,
+    pub user_properties: Vec<PropertyUser>,
+
+    pub subscription_identifier: Option<u32>,
 
     pub metadata: HashMap<String, MetadataValue>,
 }
@@ -107,7 +109,7 @@ impl Message {
         retain: bool,
         expiry_at: Option<u64>,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
     ) -> Self {
         Message {
             client_id,
@@ -116,8 +118,14 @@ impl Message {
             retain,
             expiry_at,
             payload,
-            properties,
+            user_properties,
             metadata: HashMap::new(),
+            subscription_identifier: None,
         }
+    }
+
+    pub fn with_subscription_identifier(mut self, subscription_identifier: Option<u32>) -> Self {
+        self.subscription_identifier = subscription_identifier;
+        self
     }
 }

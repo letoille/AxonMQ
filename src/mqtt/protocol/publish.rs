@@ -4,7 +4,10 @@ use byteorder::{BigEndian, ReadBytesExt as _};
 use bytes::{BufMut, Bytes, BytesMut};
 
 use super::super::{MqttProtocolVersion, QoS, code::ReturnCode, error::MqttProtocolError};
-use super::{message::Message, property::Property};
+use super::{
+    message::Message,
+    property::{Property, PropertyUser},
+};
 
 #[derive(Clone)]
 pub struct Publish {
@@ -13,20 +16,20 @@ pub struct Publish {
     pub(crate) retain: bool,
 
     pub(crate) topic: String,
-    pub(crate) topic_alias: Option<u16>,
-
-    pub(crate) packet_id: Option<u16>,
     pub(crate) payload: Bytes,
 
-    pub(crate) properties: Vec<Property>,
+    pub(crate) topic_alias: Option<u16>,
+    pub(crate) packet_id: Option<u16>,
     pub(crate) expiry_at: Option<u64>,
+    pub(crate) subscription_identifier: Option<u32>,
+
+    pub(crate) user_properties: Vec<PropertyUser>,
 }
 
 #[derive(Clone)]
 pub struct PubAck {
     pub(crate) packet_id: u16,
     pub(crate) reason_code: ReturnCode,
-    pub(crate) properties: Vec<Property>,
 }
 
 pub type PubRec = PubAck;
@@ -41,7 +44,7 @@ impl Publish {
         topic: String,
         packet_id: Option<u16>,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
     ) -> Self {
         Publish {
             dup,
@@ -50,10 +53,16 @@ impl Publish {
             topic,
             packet_id,
             payload,
-            properties,
             expiry_at: None,
             topic_alias: None,
+            subscription_identifier: None,
+            user_properties,
         }
+    }
+
+    pub fn with_subscription_identifier(mut self, subscription_identifier: Option<u32>) -> Self {
+        self.subscription_identifier = subscription_identifier;
+        self
     }
 
     pub fn into(self, version: MqttProtocolVersion) -> Bytes {
@@ -72,7 +81,8 @@ impl Publish {
 
         if version == MqttProtocolVersion::V5 {
             let mut prop_bytes = BytesMut::new();
-            for prop in self.properties {
+            for prop in self.user_properties {
+                let prop = Property::UserProperty(prop);
                 prop_bytes.put(prop.into_bytes());
             }
 
@@ -124,31 +134,32 @@ impl Publish {
             None
         };
 
-        let mut properties = Vec::new();
         let mut expiry_at = None;
         let mut topic_alias: Option<u16> = None;
+        let mut subscription_identifier = None;
+        let mut user_properties = Vec::new();
 
         if version == MqttProtocolVersion::V5 {
-            properties = Property::try_from_properties(rdr)?;
-            for prop in properties.iter() {
+            let properties = Property::try_from_properties(rdr)?;
+            for prop in properties.into_iter() {
                 match prop {
                     Property::MessageExpiryInterval(v) => {
-                        expiry_at =
-                            Some(coarsetime::Clock::now_since_epoch().as_secs() + *v as u64);
+                        expiry_at = Some(coarsetime::Clock::now_since_epoch().as_secs() + v as u64);
                     }
                     Property::TopicAlias(v) => {
-                        topic_alias = Some(*v);
+                        topic_alias = Some(v);
+                    }
+                    Property::SubscriptionIdentifier(v) => {
+                        subscription_identifier = Some(v);
+                    }
+                    Property::UserProperty(v) => {
+                        user_properties.push(v);
                     }
                     _ => {}
                 }
             }
-            properties.retain(|p| {
-                !matches!(
-                    p,
-                    Property::MessageExpiryInterval(_) | Property::TopicAlias(_)
-                )
-            });
         };
+
         let end_offset = rdr.position() as usize;
         let payload = rdr.get_ref().slice(end_offset..);
 
@@ -159,9 +170,10 @@ impl Publish {
             topic,
             packet_id,
             payload,
-            properties,
             expiry_at,
             topic_alias,
+            subscription_identifier,
+            user_properties,
         };
 
         Ok(Message::Publish(publish))
@@ -169,11 +181,10 @@ impl Publish {
 }
 
 impl PubAck {
-    pub fn new(packet_id: u16, code: ReturnCode, properties: Vec<Property>) -> Self {
+    pub fn new(packet_id: u16, code: ReturnCode) -> Self {
         PubAck {
             packet_id,
             reason_code: code,
-            properties,
         }
     }
 
@@ -186,23 +197,21 @@ impl PubAck {
             return Ok(Message::PubAck(PubAck {
                 packet_id,
                 reason_code: ReturnCode::Success,
-                properties: vec![],
             }));
         }
 
         let reason_code = rdr.read_u8()?;
         let reason_code = ReturnCode::try_from(reason_code)?;
 
-        let mut properties = vec![];
+        let mut _properties = vec![];
         let properties_len = rdr.read_u8().unwrap_or(0);
         if properties_len > 0 {
-            properties = Property::try_from_properties(rdr)?;
+            _properties = Property::try_from_properties(rdr)?;
         }
 
         Ok(Message::PubAck(PubAck {
             packet_id,
             reason_code,
-            properties,
         }))
     }
 
@@ -215,25 +224,23 @@ impl PubAck {
             return Ok(Message::PubRec(PubAck {
                 packet_id,
                 reason_code: ReturnCode::Success,
-                properties: vec![],
             }));
         }
 
         let reason_code = rdr.read_u8().unwrap_or(ReturnCode::Success as u8);
         let reason_code = ReturnCode::try_from(reason_code)?;
 
-        let mut properties = vec![];
+        let mut _properties = vec![];
         if reason_code != ReturnCode::Success {
             let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
-                properties = Property::try_from_properties(rdr)?;
+                _properties = Property::try_from_properties(rdr)?;
             }
         }
 
         Ok(Message::PubRec(PubAck {
             packet_id,
             reason_code,
-            properties,
         }))
     }
 
@@ -246,40 +253,39 @@ impl PubAck {
             return Ok(Message::PubComp(PubAck {
                 packet_id,
                 reason_code: ReturnCode::Success,
-                properties: vec![],
             }));
         }
 
         let reason_code = rdr.read_u8().unwrap_or(ReturnCode::Success as u8);
         let reason_code = ReturnCode::try_from(reason_code)?;
 
-        let mut properties = vec![];
+        let mut _properties = vec![];
         if reason_code != ReturnCode::Success {
             let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
-                properties = Property::try_from_properties(rdr)?;
+                _properties = Property::try_from_properties(rdr)?;
             }
         }
 
         Ok(Message::PubComp(PubAck {
             packet_id,
             reason_code,
-            properties,
         }))
     }
 
     pub fn into(self, version: MqttProtocolVersion) -> Bytes {
-        let mut buf = BytesMut::with_capacity(4 + self.properties.len());
+        let mut buf = BytesMut::with_capacity(4);
 
         buf.put_u16(self.packet_id);
 
         if version == MqttProtocolVersion::V5 {
-            if self.reason_code != ReturnCode::Success || !self.properties.is_empty() {
+            if self.reason_code != ReturnCode::Success {
                 buf.put_u8(self.reason_code as u8);
-                buf.put_u8(self.properties.len() as u8);
-                for prop in self.properties {
-                    buf.put(prop.into_bytes());
-                }
+                buf.put_u8(0);
+                //buf.put_u8(self.properties.len() as u8);
+                //for prop in self.properties {
+                //buf.put(prop.into_bytes());
+                //}
             }
         }
 
@@ -295,25 +301,23 @@ impl PubAck {
             return Ok(Message::PubRel(PubRel {
                 packet_id,
                 reason_code: ReturnCode::Success,
-                properties: vec![],
             }));
         }
 
         let reason_code = rdr.read_u8().unwrap_or(ReturnCode::Success as u8);
         let reason_code = ReturnCode::try_from(reason_code)?;
 
-        let mut properties = vec![];
+        let mut _properties = vec![];
         if reason_code != ReturnCode::Success {
             let properties_len = rdr.read_u8().unwrap_or(0);
             if properties_len > 0 {
-                properties = Property::try_from_properties(rdr)?;
+                _properties = Property::try_from_properties(rdr)?;
             }
         }
 
         Ok(Message::PubRel(PubRel {
             packet_id,
             reason_code,
-            properties,
         }))
     }
 }

@@ -12,20 +12,19 @@ pub struct SubscribeOption {
     pub(crate) no_local: bool,
     pub(crate) retain_as_published: bool,
     pub(crate) retain_handling: u8,
+    pub(crate) subscription_identifier: Option<u32>,
 }
 
 #[derive(Clone)]
 pub struct Subscribe {
     pub(crate) packet_id: u16,
     pub(crate) topics: Vec<(String, SubscribeOption)>,
-    pub(crate) properties: Vec<Property>,
 }
 
 #[derive(Clone)]
 pub struct SubAck {
     pub(crate) packet_id: u16,
     pub(crate) return_codes: Vec<ReturnCode>,
-    pub(crate) properties: Vec<Property>,
 }
 
 #[allow(dead_code)]
@@ -33,14 +32,12 @@ pub struct SubAck {
 pub struct Unsubscribe {
     pub(crate) packet_id: u16,
     pub(crate) topics: Vec<String>,
-    pub(crate) properties: Vec<Property>,
 }
 
 #[derive(Clone)]
 pub struct UnsubAck {
     pub(crate) packet_id: u16,
     pub(crate) return_codes: Vec<ReturnCode>,
-    pub(crate) properties: Vec<Property>,
 }
 
 impl SubAck {
@@ -48,20 +45,19 @@ impl SubAck {
         SubAck {
             packet_id,
             return_codes,
-            properties: vec![],
         }
     }
 
-    pub fn into(self, version: MqttProtocolVersion) -> Bytes {
+    pub fn into(self, _version: MqttProtocolVersion) -> Bytes {
         let mut buf = BytesMut::with_capacity(2 + self.return_codes.len());
 
         buf.put_u16(self.packet_id);
-        if version == MqttProtocolVersion::V5 {
-            buf.put_u8(self.properties.len() as u8);
-            for prop in self.properties {
-                buf.put(prop.into_bytes());
-            }
-        }
+        //if version == MqttProtocolVersion::V5 {
+        //buf.put_u8(self.properties.len() as u8);
+        //for prop in self.properties {
+        //buf.put(prop.into_bytes());
+        //}
+        //}
 
         for code in self.return_codes {
             buf.put_u8(code.code());
@@ -75,7 +71,6 @@ impl UnsubAck {
         UnsubAck {
             packet_id,
             return_codes,
-            properties: vec![],
         }
     }
 
@@ -84,28 +79,28 @@ impl UnsubAck {
 
         buf.put_u16(self.packet_id);
         if version == MqttProtocolVersion::V5 {
-            let mut prop_bytes = BytesMut::new();
-            for prop in self.properties {
-                prop_bytes.put(prop.into_bytes());
-            }
+            //let mut prop_bytes = BytesMut::new();
+            //for prop in self.properties {
+            //prop_bytes.put(prop.into_bytes());
+            //}
 
-            let prop_len = prop_bytes.len();
-            if prop_len < 128 {
-                buf.put_u8(prop_len as u8);
-            } else if prop_len < 16384 {
-                buf.put_u8(((prop_len % 128) as u8) | 0x80);
-                buf.put_u8((prop_len / 128) as u8);
-            } else if prop_len < 2097152 {
-                buf.put_u8(((prop_len % 128) as u8) | 0x80);
-                buf.put_u8((((prop_len / 128) % 128) as u8) | 0x80);
-                buf.put_u8((prop_len / 16384) as u8);
-            } else {
-                buf.put_u8(((prop_len % 128) as u8) | 0x80);
-                buf.put_u8((((prop_len / 128) % 128) as u8) | 0x80);
-                buf.put_u8((((prop_len / 16384) % 128) as u8) | 0x80);
-                buf.put_u8((prop_len / 2097152) as u8);
-            }
-            buf.put(prop_bytes);
+            //let prop_len = prop_bytes.len();
+            //if prop_len < 128 {
+            //buf.put_u8(prop_len as u8);
+            //} else if prop_len < 16384 {
+            //buf.put_u8(((prop_len % 128) as u8) | 0x80);
+            //buf.put_u8((prop_len / 128) as u8);
+            //} else if prop_len < 2097152 {
+            //buf.put_u8(((prop_len % 128) as u8) | 0x80);
+            //buf.put_u8((((prop_len / 128) % 128) as u8) | 0x80);
+            //buf.put_u8((prop_len / 16384) as u8);
+            //} else {
+            //buf.put_u8(((prop_len % 128) as u8) | 0x80);
+            //buf.put_u8((((prop_len / 128) % 128) as u8) | 0x80);
+            //buf.put_u8((((prop_len / 16384) % 128) as u8) | 0x80);
+            //buf.put_u8((prop_len / 2097152) as u8);
+            //}
+            //buf.put(prop_bytes);
         }
 
         for code in self.return_codes {
@@ -122,9 +117,14 @@ impl Subscribe {
     ) -> Result<Message, MqttProtocolError> {
         let packet_id = rdr.read_u16::<BigEndian>()?;
 
-        let mut properties = Vec::new();
+        let mut subscription_identifier = None;
         if version == MqttProtocolVersion::V5 {
-            properties = Property::try_from_properties(rdr)?;
+            let properties = Property::try_from_properties(rdr)?;
+            for prop in properties {
+                if let Property::SubscriptionIdentifier(id) = prop {
+                    subscription_identifier = Some(id);
+                }
+            }
         };
 
         let mut topics = vec![];
@@ -142,6 +142,7 @@ impl Subscribe {
                     no_local: (options & 0x04) >> 2 == 1,
                     retain_as_published: (options & 0x08) >> 3 == 1,
                     retain_handling: (options & 0x30) >> 4,
+                    subscription_identifier,
                 }
             } else {
                 SubscribeOption {
@@ -149,17 +150,14 @@ impl Subscribe {
                     no_local: false,
                     retain_as_published: false,
                     retain_handling: 0,
+                    subscription_identifier,
                 }
             };
 
             topics.push((topic, options));
         }
 
-        Ok(Message::Subscribe(Subscribe {
-            packet_id,
-            topics,
-            properties,
-        }))
+        Ok(Message::Subscribe(Subscribe { packet_id, topics }))
     }
 }
 
@@ -170,9 +168,8 @@ impl Unsubscribe {
     ) -> Result<Message, MqttProtocolError> {
         let packet_id = rdr.read_u16::<BigEndian>()?;
 
-        let mut properties = Vec::new();
         if version == MqttProtocolVersion::V5 {
-            properties = Property::try_from_properties(rdr)?;
+            let _ = Property::try_from_properties(rdr)?;
         };
 
         let mut topics = vec![];
@@ -186,11 +183,7 @@ impl Unsubscribe {
             topics.push(topic);
         }
 
-        Ok(Message::Unsubscribe(Unsubscribe {
-            packet_id,
-            topics,
-            properties,
-        }))
+        Ok(Message::Unsubscribe(Unsubscribe { packet_id, topics }))
     }
 }
 

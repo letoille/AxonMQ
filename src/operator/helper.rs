@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::CONFIG;
 use crate::mqtt::QoS;
-use crate::mqtt::protocol::property::Property;
+use crate::mqtt::protocol::property::PropertyUser;
 use crate::utils::time::now_milliseconds;
 
 use super::command::OperatorCommand;
@@ -41,6 +41,7 @@ impl Helper {
         topic: String,
         qos: QoS,
         no_local: bool,
+        subscription_id: Option<u32>,
         persist: bool,
         sink: Box<dyn Sink>,
     ) -> Result<(), OperatorError> {
@@ -51,6 +52,7 @@ impl Helper {
                 topic,
                 qos,
                 no_local,
+                subscription_id,
                 persist,
                 sink,
             })
@@ -88,7 +90,7 @@ impl Helper {
         qos: QoS,
         topic: String,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
     ) -> Result<(), OperatorError> {
         self.router_tx
@@ -98,7 +100,7 @@ impl Helper {
                 qos,
                 topic,
                 payload,
-                properties,
+                user_properties,
                 expiry_at,
             })
             .await

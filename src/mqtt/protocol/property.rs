@@ -27,36 +27,56 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use super::super::error::MqttProtocolError;
 
+#[derive(Clone)]
+pub struct PropertyUser {
+    pub key: String,
+    pub value: String,
+}
+
+impl std::default::Default for PropertyUser {
+    fn default() -> Self {
+        PropertyUser {
+            key: String::new(),
+            value: String::new(),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum Property {
-    PayloadFormatIndicator(u8), // 0: binary, 1: utf8. publish, will properties
-    MessageExpiryInterval(u32), // message stay in broker (second). publish, will properties
-    ContentType(String),        // mime type of payload. publish, will properties
-    ResponseTopic(String),      // response topic. publish, subscribe properties
-    CorrelationData(Vec<u8>),   // used to correlate request/response. publish, subscribe properties
-    SubscriptionIdentifier(u32), // publish, subscribe properties
-    SessionExpiryInterval(u32), // session stay in broker (second). connect, connack, disconnect
-    AssignedClientIdentifier(String), // connack
-    ServerKeepAlive(u16),       //  server actually keep alive (second). connack
-    AuthenticationMethod(String), // connect, connack, auth
-    AuthenticationData(Vec<u8>), // connect, connack, auth
-    RequestProblemInformation(u8), // if client set to 0, server should not send problem information. connect
-    WillDelayInterval(u32),        // will delay interval (second). will properties
-    RequestResponseInformation(u8), // if client set to 1, server should send response information. connect
-    ResponseInformation(String),    // broker-specific response information. connack
-    ServerReference(String), // if broker reject connection, it can use this property to inform client to connect to another server. connack, disconnect
     ReasonString(String), // detail reason. connack, puback, pubrec, pubrel, pubcomp, suback, unsuback, disconnect, auth
+    ServerReference(String), // if broker reject connection, it can use this property to inform client to connect to another server. connack, disconnect
+    ResponseInformation(String), // broker-specific response information. connack
+    RequestResponseInformation(u8), // if client set to 1, server should send response information. connect
+    RequestProblemInformation(u8), // if client set to 0, server should not send problem information. connect
+    AuthenticationMethod(String),  // connect, connack, auth
+    AuthenticationData(Vec<u8>),   // connect, connack, auth
+
+    ResponseTopic(String),    // response topic. publish, subscribe properties
+    CorrelationData(Vec<u8>), // used to correlate request/response. publish, subscribe properties
+
+    PayloadFormatIndicator(u8), // 0: binary, 1: utf8. publish, will properties
+    ContentType(String),        // mime type of payload. publish, will properties
+
+    ServerKeepAlive(u16), //  server actually keep alive (second). connack
+
+    AssignedClientIdentifier(String),    // connack
+    SubscriptionIdentifier(u32),         // publish, subscribe properties
+    SessionExpiryInterval(u32), // session stay in broker (second). connect, connack, disconnect
+    MessageExpiryInterval(u32), // message stay in broker (second). publish, will properties
+    WillDelayInterval(u32),     // will delay interval (second). will properties
     ReceiveMaximum(u16), // maximum number of QoS 1 and QoS 2 publications that the server is willing to process concurrently. connect, connack
     TopicAliasMaximum(u16), // maximum number of topic aliases that the server is willing to accept. connect, connack
     TopicAlias(u16),        // topic alias. publish
     MaximumQoS(u8),         // maximum QoS that the server is willing to accept. connack
     RetainAvailable(u8),    // if 1, server accept retained messages.  connack
-    UserProperty((String, String)), // user property. all packets except pubrel
     MaximumPacketSize(u32), // client/server maximum packet size. connect, connack
     WildcardSubscriptionAvailable(u8), // if 1, server accept subscription with wildcard. connack
     SubscriptionIdentifierAvailable(u8), // if 1, server accept subscription with subscription identifier. connack
     SharedSubscriptionAvailable(u8), // if 1, server accept subscription with shared subscription.
+
+    UserProperty(PropertyUser), // user property. all packets except pubrel
 }
 
 impl std::fmt::Display for Property {
@@ -88,7 +108,7 @@ impl std::fmt::Display for Property {
             Property::TopicAlias(v) => write!(f, "TopicAlias: {}", v),
             Property::MaximumQoS(v) => write!(f, "MaximumQoS: {}", v),
             Property::RetainAvailable(v) => write!(f, "RetainAvailable: {}", v),
-            Property::UserProperty((k, v)) => write!(f, "UserProperty: {}={}", k, v),
+            Property::UserProperty(p) => write!(f, "UserProperty: {}={}", p.key, p.value),
             Property::MaximumPacketSize(v) => write!(f, "MaximumPacketSize: {}", v),
             Property::WildcardSubscriptionAvailable(v) => {
                 write!(f, "WildcardSubscriptionAvailable: {}", v)
@@ -104,24 +124,6 @@ impl std::fmt::Display for Property {
 }
 
 impl Property {
-    pub(crate) fn filter_for_publish(properties: Vec<Property>) -> Vec<Property> {
-        properties
-            .into_iter()
-            .filter(|p| {
-                matches!(
-                    p,
-                    Property::PayloadFormatIndicator(_)
-                        | Property::MessageExpiryInterval(_)
-                        | Property::ContentType(_)
-                        | Property::ResponseTopic(_)
-                        | Property::CorrelationData(_)
-                        | Property::SubscriptionIdentifier(_)
-                        | Property::UserProperty(_)
-                )
-            })
-            .collect()
-    }
-
     pub(crate) fn code(&self) -> u8 {
         match self {
             Property::PayloadFormatIndicator(_) => 0x01,
@@ -178,7 +180,7 @@ impl Property {
             0x23 => Ok(Property::TopicAlias(0)),
             0x24 => Ok(Property::MaximumQoS(0)),
             0x25 => Ok(Property::RetainAvailable(0)),
-            0x26 => Ok(Property::UserProperty((String::new(), String::new()))),
+            0x26 => Ok(Property::UserProperty(PropertyUser::default())),
             0x27 => Ok(Property::MaximumPacketSize(0)),
             0x28 => Ok(Property::WildcardSubscriptionAvailable(0)),
             0x29 => Ok(Property::SubscriptionIdentifierAvailable(0)),
@@ -242,11 +244,11 @@ impl Property {
                     }
                 }
             }
-            UserProperty((k, v)) => {
-                buf.put_u16(k.len() as u16);
-                buf.put_slice(k.as_bytes());
-                buf.put_u16(v.len() as u16);
-                buf.put_slice(v.as_bytes());
+            UserProperty(p) => {
+                buf.put_u16(p.key.len() as u16);
+                buf.put_slice(p.key.as_bytes());
+                buf.put_u16(p.value.len() as u16);
+                buf.put_slice(p.value.as_bytes());
             }
         }
 
@@ -330,7 +332,7 @@ impl Property {
                 let value =
                     String::from_utf8(value_buf).map_err(|_| MqttProtocolError::InvalidProperty)?;
 
-                *v = (key, value);
+                *v = PropertyUser { key, value };
             }
         }
 

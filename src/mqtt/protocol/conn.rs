@@ -103,26 +103,26 @@ impl Connect {
         let mut packet_maximum = CONFIG.get().unwrap().mqtt.settings.max_packet_size;
         let mut topic_alias_maximum = 0;
 
-        for prop in properties.iter() {
+        for prop in properties.into_iter() {
             match prop {
                 Property::SessionExpiryInterval(v) => {
-                    if session_expiry_interval == 0 || *v < session_expiry_interval {
-                        session_expiry_interval = *v;
+                    if session_expiry_interval == 0 || v < session_expiry_interval {
+                        session_expiry_interval = v;
                     }
                 }
                 Property::MaximumPacketSize(v) => {
-                    if packet_maximum == 0 || *v < packet_maximum {
-                        packet_maximum = *v;
+                    if packet_maximum == 0 || v < packet_maximum {
+                        packet_maximum = v;
                     }
                 }
                 Property::ReceiveMaximum(v) => {
-                    if inflight_maximum == 0 || *v < inflight_maximum {
-                        inflight_maximum = *v;
+                    if inflight_maximum == 0 || v < inflight_maximum {
+                        inflight_maximum = v;
                     }
                 }
                 Property::TopicAliasMaximum(v) => {
-                    if *v <= CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum {
-                        topic_alias_maximum = *v;
+                    if v <= CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum {
+                        topic_alias_maximum = v;
                     } else {
                         topic_alias_maximum =
                             CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum;
@@ -133,42 +133,31 @@ impl Connect {
                 }
             }
         }
-        properties.retain(|p| {
-            !matches!(
-                p,
-                Property::SessionExpiryInterval(_)
-                    | Property::MaximumPacketSize(_)
-                    | Property::ReceiveMaximum(_)
-            )
-        });
 
         let client_id_len = rdr.read_u16::<BigEndian>()? as usize;
         let mut client_id_buf = vec![0; client_id_len];
         let _ = rdr.read_exact(&mut client_id_buf)?;
         let client_id = String::from_utf8_lossy(&client_id_buf).into_owned();
 
-        let mut will_properties = Vec::new();
         let mut will_delay_interval = None;
         let mut will_expiry_interval = None;
+        let mut will_user_properties = Vec::new();
 
         if proto_version == MqttProtocolVersion::V5 && will_flag {
-            will_properties = Property::try_from_properties(rdr)?;
+            let will_properties = Property::try_from_properties(rdr)?;
 
-            for prop in will_properties.iter() {
+            for prop in will_properties.into_iter() {
                 match prop {
-                    Property::WillDelayInterval(v) => will_delay_interval = Some(*v),
-                    Property::MessageExpiryInterval(v) => will_expiry_interval = Some(*v as u64),
+                    Property::WillDelayInterval(v) => will_delay_interval = Some(v),
+                    Property::MessageExpiryInterval(v) => will_expiry_interval = Some(v as u64),
+                    Property::UserProperty(v) => {
+                        will_user_properties.push(v);
+                    }
                     _ => {
                         debug!("ignore property in CONNECT WILL: {}", prop);
                     }
                 }
             }
-            will_properties.retain(|p| {
-                !matches!(
-                    p,
-                    Property::WillDelayInterval(_) | Property::MessageExpiryInterval(_)
-                )
-            });
         }
 
         let will = if will_flag {
@@ -189,7 +178,7 @@ impl Connect {
                 qos: will_qos,
                 topic: will_topic,
                 payload: will_msg,
-                properties: will_properties,
+                user_properties: will_user_properties,
                 will_delay_interval: will_delay_interval.unwrap_or(0),
                 expiry_interval: will_expiry_interval,
             })
@@ -320,6 +309,7 @@ impl ConnAck {
                 Property::SubscriptionIdentifierAvailable(1),
                 Property::SharedSubscriptionAvailable(1),
                 Property::MaximumPacketSize(config.mqtt.settings.max_packet_size),
+                Property::MaximumQoS(2),
             ];
             if let Some(client_id) = self.generated_client_id {
                 properties.push(Property::AssignedClientIdentifier(client_id));

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::mqtt::{QoS, protocol::property::Property};
+use crate::mqtt::{QoS, protocol::property::PropertyUser};
 
 use super::sink::Sink;
 
@@ -14,6 +14,7 @@ pub(crate) enum OperatorCommand {
         topic: String,
         qos: QoS,
         no_local: bool,
+        subscription_id: Option<u32>,
         persist: bool,
         sink: Box<dyn Sink>,
     },
@@ -31,7 +32,7 @@ pub(crate) enum OperatorCommand {
         qos: QoS,
         topic: String,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
     },
     SparkPlugBPublish {

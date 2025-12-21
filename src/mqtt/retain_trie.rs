@@ -2,14 +2,14 @@ use std::collections::{BTreeSet, HashMap};
 
 use bytes::Bytes;
 
-use crate::mqtt::{QoS, protocol::property::Property};
+use crate::mqtt::{QoS, protocol::property::PropertyUser};
 
 #[derive(Clone)]
 pub struct RetainedMessage {
     pub topic: String,
     pub qos: QoS,
     pub payload: Bytes,
-    pub properties: Vec<Property>,
+    pub user_properties: Vec<PropertyUser>,
     pub expiry_at: Option<u64>,
 }
 

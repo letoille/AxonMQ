@@ -164,16 +164,10 @@ impl From<Message> for handler::Message {
                 )
             })
             .collect();
-        let properties = message
-            .properties
+        let user_properties = message
+            .user_properties
             .iter()
-            .filter_map(|p| {
-                if let crate::mqtt::protocol::property::Property::UserProperty(v) = p {
-                    Some((v.0.clone(), v.1.clone()))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|p| Some((p.key.clone(), p.value.clone())))
             .collect();
 
         let msg = handler::Message {
@@ -187,7 +181,8 @@ impl From<Message> for handler::Message {
             retain: message.retain,
             payload: message.payload.to_vec(),
             metadata,
-            properties,
+            user_properties,
+            subscriber_identifier: message.subscription_identifier,
         };
 
         msg
@@ -202,11 +197,12 @@ impl From<handler::Message> for Message {
             handler::Qos::ExactlyOnce => crate::mqtt::QoS::ExactlyOnce,
         };
         let payload = message.payload.into();
-        let properties = message
-            .properties
+        let user_properties = message
+            .user_properties
             .iter()
-            .map(|(k, v)| {
-                crate::mqtt::protocol::property::Property::UserProperty((k.clone(), v.clone()))
+            .map(|(k, v)| crate::mqtt::protocol::property::PropertyUser {
+                key: k.clone(),
+                value: v.clone(),
             })
             .collect();
         let metadata = message
@@ -240,7 +236,8 @@ impl From<handler::Message> for Message {
             retain: message.retain,
             expiry_at: None,
             payload,
-            properties,
+            user_properties,
+            subscription_identifier: message.subscriber_identifier,
             metadata,
         }
     }

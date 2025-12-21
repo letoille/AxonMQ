@@ -3,7 +3,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::protocol::{
     conn::{ConnAck, Connect},
-    property::Property,
+    property::PropertyUser,
     subscribe::{SubAck, Subscribe, UnsubAck, Unsubscribe},
 };
 use super::{QoS, code::ReturnCode};
@@ -39,14 +39,14 @@ pub(crate) enum BrokerCommand {
         qos: QoS,
         topic: String,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
     },
     RetainMessage {
         topic: String,
         qos: QoS,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
     },
     StoreMsg {
@@ -63,7 +63,8 @@ pub enum ClientCommand {
         qos: QoS,
         retain: bool,
         payload: Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
+        subscription_identifier: Option<u32>,
     },
 }

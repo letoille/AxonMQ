@@ -20,7 +20,8 @@ interface handler {
         qos: qos,
         retain: bool,
         payload: list<u8>,
-        properties: list<tuple<string, string>>,
+        user-properties: list<tuple<string, string>>,
+        subscriber-identifier: option<u32>,
         metadata: list<tuple<string, value>>,
     }
 

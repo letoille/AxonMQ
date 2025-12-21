@@ -7,7 +7,7 @@ use super::error::MqttProtocolError;
 use super::listener::store::Store;
 use super::protocol::{
     conn::{ConnAck, Connect},
-    property::Property,
+    property::PropertyUser,
     subscribe::{SubAck, Subscribe, UnsubAck, Unsubscribe},
 };
 
@@ -115,7 +115,7 @@ impl BrokerHelper {
         payload: bytes::Bytes,
         qos: QoS,
         retain: bool,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expire_at: Option<u64>,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
@@ -125,7 +125,7 @@ impl BrokerHelper {
                 payload,
                 qos,
                 retain,
-                properties,
+                user_properties,
                 expiry_at: expire_at,
             })
             .await
@@ -138,7 +138,7 @@ impl BrokerHelper {
         topic: String,
         qos: QoS,
         payload: bytes::Bytes,
-        properties: Vec<Property>,
+        user_properties: Vec<PropertyUser>,
         expiry_at: Option<u64>,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
@@ -146,7 +146,7 @@ impl BrokerHelper {
                 topic,
                 qos,
                 payload,
-                properties,
+                user_properties,
                 expiry_at,
             })
             .await

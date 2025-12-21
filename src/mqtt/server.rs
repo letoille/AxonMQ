@@ -17,7 +17,6 @@ use super::{
     listener::store::Store,
     protocol::{
         conn::ConnAck,
-        property::Property,
         subscribe::{SubAck, SubscribeOption, UnsubAck},
         will::Will,
     },
@@ -35,7 +34,7 @@ pub struct Client {
     clear_start: bool,
     expiry: u32,
 
-    subscribes: HashMap<String, (SubscribeOption, Vec<Property>)>,
+    subscribes: HashMap<String, SubscribeOption>,
     client_helper: ClientHelper,
 
     will: Option<Will>,
@@ -84,7 +83,7 @@ impl Broker {
                     will.payload,
                     will.qos,
                     will.retain,
-                    Property::filter_for_publish(will.properties),
+                    will.user_properties,
                     will.expiry_interval
                         .map(|v| coarsetime::Clock::now_since_epoch().as_secs() + v as u64),
                 )
@@ -193,7 +192,7 @@ impl Broker {
                 if client.clear_start {
                     store_msgs.remove(&connect.client_id);
                 } else {
-                    for (topic, (options, _)) in &client.subscribes {
+                    for (topic, options) in &client.subscribes {
                         let (group, actual_topic) = if utils::is_shared_subscription(topic) {
                             utils::parse_shared_subscription(topic).unwrap_or(("", topic.as_str()))
                         } else {
@@ -210,6 +209,7 @@ impl Broker {
                                 actual_topic.to_string(),
                                 options.qos,
                                 options.no_local,
+                                options.subscription_identifier,
                                 client.expiry > 0,
                                 LocalClientSink::new(
                                     client.client_helper.get(),
@@ -268,6 +268,7 @@ impl Broker {
                                         actual_topic.to_string(),
                                         options.qos,
                                         options.no_local,
+                                        options.subscription_identifier,
                                         client.expiry > 0,
                                         LocalClientSink::new(
                                             client.client_helper.get(),
@@ -284,14 +285,14 @@ impl Broker {
                                             qos: msg.qos,
                                             topic: msg.topic.clone(),
                                             payload: msg.payload.clone(),
-                                            properties: msg.properties.clone(),
+                                            user_properties: msg.user_properties.clone(),
                                             expiry_at: msg.expiry_at,
+                                            subscription_identifier: options
+                                                .subscription_identifier,
                                         })
                                         .ok();
                                 }
-                                client
-                                    .subscribes
-                                    .insert(topic, (options, subscribe.properties.clone()));
+                                client.subscribes.insert(topic, options);
                             }
 
                             codes.push(ReturnCode::Success);
@@ -393,7 +394,7 @@ impl Broker {
                 qos,
                 topic,
                 payload,
-                properties,
+                user_properties,
                 expiry_at,
             } => {
                 let client = store_clients
@@ -406,7 +407,7 @@ impl Broker {
                                 topic.clone(),
                                 qos,
                                 payload.clone(),
-                                properties.clone(),
+                                user_properties.clone(),
                                 expiry_at,
                             )
                             .await
@@ -415,7 +416,13 @@ impl Broker {
 
                     let _ = operator_helper
                         .publish(
-                            client_id, retain, qos, topic, payload, properties, expiry_at,
+                            client_id,
+                            retain,
+                            qos,
+                            topic,
+                            payload,
+                            user_properties,
+                            expiry_at,
                         )
                         .await;
                 }
@@ -444,7 +451,7 @@ impl Broker {
                 topic,
                 qos,
                 payload,
-                properties,
+                user_properties,
                 expiry_at,
             } => {
                 if payload.is_empty() || expiry_at == Some(0) {
@@ -456,7 +463,7 @@ impl Broker {
                             qos,
                             topic: topic.clone(),
                             payload: payload.clone(),
-                            properties: properties.clone(),
+                            user_properties: user_properties.clone(),
                             expiry_at,
                         },
                     );
