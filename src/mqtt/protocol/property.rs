@@ -53,9 +53,6 @@ pub enum Property {
     AuthenticationMethod(String),  // connect, connack, auth
     AuthenticationData(Vec<u8>),   // connect, connack, auth
 
-    ResponseTopic(String),    // response topic. publish, subscribe properties
-    CorrelationData(Vec<u8>), // used to correlate request/response. publish, subscribe properties
-
     PayloadFormatIndicator(u8), // 0: binary, 1: utf8. publish, will properties
     ContentType(String),        // mime type of payload. publish, will properties
 
@@ -75,6 +72,8 @@ pub enum Property {
     WildcardSubscriptionAvailable(u8), // if 1, server accept subscription with wildcard. connack
     SubscriptionIdentifierAvailable(u8), // if 1, server accept subscription with subscription identifier. connack
     SharedSubscriptionAvailable(u8), // if 1, server accept subscription with shared subscription.
+    ResponseTopic(String),           // response topic. publish, subscribe properties
+    CorrelationData(Vec<u8>), // used to correlate request/response. publish, subscribe properties
 
     UserProperty(PropertyUser), // user property. all packets except pubrel
 }

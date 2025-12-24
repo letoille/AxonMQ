@@ -62,12 +62,13 @@ fn main() -> Result<()> {
         .with_filter(filter.clone());
 
     let stdout_layer = fmt::layer()
+        .with_ansi(true)
         .with_writer(std::io::stdout)
         .with_filter(filter.clone());
 
     Registry::default()
-        .with(stdout_layer)
         .with(file_layer)
+        .with(stdout_layer)
         .init();
 
     let config = CONFIG.get().unwrap();

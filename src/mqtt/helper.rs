@@ -8,6 +8,7 @@ use super::listener::store::Store;
 use super::protocol::{
     conn::{ConnAck, Connect},
     property::PropertyUser,
+    publish::PublishOptions,
     subscribe::{SubAck, Subscribe, UnsubAck, Unsubscribe},
 };
 
@@ -95,12 +96,14 @@ impl BrokerHelper {
         &self,
         client_id: &str,
         code: ReturnCode,
+        session_expiry_interval: Option<u32>,
         store: Store,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
             .send(BrokerCommand::Disconnected(
                 client_id.to_string(),
                 code,
+                session_expiry_interval,
                 store,
             ))
             .await
@@ -116,7 +119,7 @@ impl BrokerHelper {
         qos: QoS,
         retain: bool,
         user_properties: Vec<PropertyUser>,
-        expire_at: Option<u64>,
+        options: PublishOptions,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
             .send(BrokerCommand::WillPublish {
@@ -126,7 +129,7 @@ impl BrokerHelper {
                 qos,
                 retain,
                 user_properties,
-                expiry_at: expire_at,
+                options,
             })
             .await
             .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;
@@ -139,7 +142,7 @@ impl BrokerHelper {
         qos: QoS,
         payload: bytes::Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
+        options: PublishOptions,
     ) -> Result<(), MqttProtocolError> {
         self.broker_tx
             .send(BrokerCommand::RetainMessage {
@@ -147,7 +150,7 @@ impl BrokerHelper {
                 qos,
                 payload,
                 user_properties,
-                expiry_at,
+                options,
             })
             .await
             .map_err(|_| MqttProtocolError::BrokerChannelSendError)?;

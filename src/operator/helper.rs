@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::CONFIG;
 use crate::mqtt::QoS;
-use crate::mqtt::protocol::property::PropertyUser;
+use crate::mqtt::protocol::{property::PropertyUser, publish::PublishOptions};
 use crate::utils::time::now_milliseconds;
 
 use super::command::OperatorCommand;
@@ -91,7 +91,7 @@ impl Helper {
         topic: String,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
+        options: PublishOptions,
     ) -> Result<(), OperatorError> {
         self.router_tx
             .send(OperatorCommand::Publish {
@@ -101,7 +101,7 @@ impl Helper {
                 topic,
                 payload,
                 user_properties,
-                expiry_at,
+                options,
             })
             .await
             .map_err(|e| OperatorError::ChannelSendError(e.to_string()))

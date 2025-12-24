@@ -9,6 +9,53 @@ use super::{
     property::{Property, PropertyUser},
 };
 
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct PublishOptions {
+    pub(crate) payload_format_indicator: Option<u8>,
+    pub(crate) topic_alias: Option<u16>,
+    pub(crate) message_expiry_interval: Option<u32>,
+    pub(crate) subscription_identifier: Option<u32>,
+    pub(crate) message_expiry_at: Option<u64>,
+    pub(crate) content_type: Option<String>,
+    pub(crate) response_topic: Option<String>,
+    pub(crate) correlation_data: Option<Bytes>,
+}
+
+impl PublishOptions {
+    pub fn with_subscription_identifier(mut self, v: Option<u32>) -> Self {
+        self.subscription_identifier = v;
+        self
+    }
+
+    pub fn with_expiry(mut self, v: Option<u32>) -> Self {
+        self.message_expiry_interval = v;
+        self.message_expiry_at = v.map(|interval| {
+            if interval == 0 {
+                0
+            } else {
+                coarsetime::Clock::now_since_epoch().as_secs() + interval as u64
+            }
+        });
+        self
+    }
+}
+
+impl std::default::Default for PublishOptions {
+    fn default() -> Self {
+        PublishOptions {
+            payload_format_indicator: None,
+            topic_alias: None,
+            message_expiry_interval: None,
+            message_expiry_at: None,
+            subscription_identifier: None,
+            content_type: None,
+            response_topic: None,
+            correlation_data: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Publish {
     pub(crate) dup: bool,
@@ -18,11 +65,9 @@ pub struct Publish {
     pub(crate) topic: String,
     pub(crate) payload: Bytes,
 
-    pub(crate) topic_alias: Option<u16>,
     pub(crate) packet_id: Option<u16>,
-    pub(crate) expiry_at: Option<u64>,
-    pub(crate) subscription_identifier: Option<u32>,
 
+    pub(crate) options: PublishOptions,
     pub(crate) user_properties: Vec<PropertyUser>,
 }
 
@@ -53,15 +98,13 @@ impl Publish {
             topic,
             packet_id,
             payload,
-            expiry_at: None,
-            topic_alias: None,
-            subscription_identifier: None,
             user_properties,
+            options: PublishOptions::default(),
         }
     }
 
-    pub fn with_subscription_identifier(mut self, subscription_identifier: Option<u32>) -> Self {
-        self.subscription_identifier = subscription_identifier;
+    pub fn with_options(mut self, options: PublishOptions) -> Self {
+        self.options = options;
         self
     }
 
@@ -81,6 +124,43 @@ impl Publish {
 
         if version == MqttProtocolVersion::V5 {
             let mut prop_bytes = BytesMut::new();
+
+            if let Some(payload_format_indicator) = self.options.payload_format_indicator {
+                let prop = Property::PayloadFormatIndicator(payload_format_indicator);
+                prop_bytes.put(prop.into_bytes());
+            }
+
+            // todo topic alias
+            //if let Some(topic_alias) = self.options.topic_alias {
+            //let prop = Property::TopicAlias(topic_alias);
+            //prop_bytes.put(prop.into_bytes());
+            //}
+
+            if let Some(message_expiry_interval) = self.options.message_expiry_interval {
+                let prop = Property::MessageExpiryInterval(message_expiry_interval);
+                prop_bytes.put(prop.into_bytes());
+            }
+
+            if let Some(subscription_identifier) = self.options.subscription_identifier {
+                let prop = Property::SubscriptionIdentifier(subscription_identifier);
+                prop_bytes.put(prop.into_bytes());
+            }
+
+            if let Some(content_type) = self.options.content_type {
+                let prop = Property::ContentType(content_type);
+                prop_bytes.put(prop.into_bytes());
+            }
+
+            if let Some(response_topic) = self.options.response_topic {
+                let prop = Property::ResponseTopic(response_topic);
+                prop_bytes.put(prop.into_bytes());
+            }
+
+            if let Some(correlation_data) = self.options.correlation_data {
+                let prop = Property::CorrelationData(correlation_data.to_vec());
+                prop_bytes.put(prop.into_bytes());
+            }
+
             for prop in self.user_properties {
                 let prop = Property::UserProperty(prop);
                 prop_bytes.put(prop.into_bytes());
@@ -134,9 +214,7 @@ impl Publish {
             None
         };
 
-        let mut expiry_at = None;
-        let mut topic_alias: Option<u16> = None;
-        let mut subscription_identifier = None;
+        let mut options = PublishOptions::default();
         let mut user_properties = Vec::new();
 
         if version == MqttProtocolVersion::V5 {
@@ -144,13 +222,26 @@ impl Publish {
             for prop in properties.into_iter() {
                 match prop {
                     Property::MessageExpiryInterval(v) => {
-                        expiry_at = Some(coarsetime::Clock::now_since_epoch().as_secs() + v as u64);
+                        options = options.with_expiry(Some(v));
                     }
                     Property::TopicAlias(v) => {
-                        topic_alias = Some(v);
+                        options.topic_alias = Some(v);
                     }
-                    Property::SubscriptionIdentifier(v) => {
-                        subscription_identifier = Some(v);
+                    // broker does not need subscription identifier in publish packet
+                    //Property::SubscriptionIdentifier(v) => {
+                    //options.subscription_identifier = Some(v);
+                    //}
+                    Property::PayloadFormatIndicator(v) => {
+                        options.payload_format_indicator = Some(v);
+                    }
+                    Property::ContentType(v) => {
+                        options.content_type = Some(v);
+                    }
+                    Property::ResponseTopic(v) => {
+                        options.response_topic = Some(v);
+                    }
+                    Property::CorrelationData(v) => {
+                        options.correlation_data = Some(Bytes::from(v));
                     }
                     Property::UserProperty(v) => {
                         user_properties.push(v);
@@ -170,9 +261,7 @@ impl Publish {
             topic,
             packet_id,
             payload,
-            expiry_at,
-            topic_alias,
-            subscription_identifier,
+            options,
             user_properties,
         };
 

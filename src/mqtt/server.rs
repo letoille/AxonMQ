@@ -16,7 +16,7 @@ use super::{
     helper::BrokerHelper,
     listener::store::Store,
     protocol::{
-        conn::ConnAck,
+        conn::{ConnAck, ConnectOptions},
         subscribe::{SubAck, SubscribeOption, UnsubAck},
         will::Will,
     },
@@ -32,14 +32,13 @@ pub struct Client {
     disconnected_tm: u64,
 
     clear_start: bool,
-    expiry: u32,
-
     subscribes: HashMap<String, SubscribeOption>,
-    client_helper: ClientHelper,
-
     will: Option<Will>,
 
+    client_helper: ClientHelper,
     store: Option<Store>,
+
+    options: ConnectOptions,
 }
 
 pub struct Broker {
@@ -73,8 +72,10 @@ impl Broker {
 
     fn prepare_will_message(broker_helper: BrokerHelper, client_id: String, will: Will) {
         task::spawn(async move {
-            if will.will_delay_interval > 0 {
-                time::sleep(time::Duration::from_secs(will.will_delay_interval as u64)).await;
+            if let Some(delay_interval) = will.options.will_delay_interval {
+                if delay_interval > 0 {
+                    time::sleep(time::Duration::from_secs(delay_interval as u64)).await;
+                }
             }
             broker_helper
                 .will_publish(
@@ -84,8 +85,7 @@ impl Broker {
                     will.qos,
                     will.retain,
                     will.user_properties,
-                    will.expiry_interval
-                        .map(|v| coarsetime::Clock::now_since_epoch().as_secs() + v as u64),
+                    will.options.options,
                 )
                 .await
                 .ok();
@@ -140,11 +140,11 @@ impl Broker {
                         connected: true,
                         disconnected_tm: 0,
                         clear_start: connect.clean_start,
-                        expiry: connect.session_expiry_interval,
                         client_helper: ClientHelper::new(client_tx),
                         subscribes: HashMap::new(),
                         will: connect.will,
                         store: None,
+                        options: connect.options.clone(),
                     }
                 } else {
                     Client {
@@ -153,7 +153,6 @@ impl Broker {
                         connected: true,
                         disconnected_tm: 0,
                         clear_start: connect.clean_start,
-                        expiry: connect.session_expiry_interval,
                         client_helper: ClientHelper::new(client_tx),
                         subscribes: old_client
                             .as_ref()
@@ -161,20 +160,22 @@ impl Broker {
                             .unwrap_or_default(),
                         will: connect.will,
                         store: old_client.and_then(|c| c.store),
+                        options: connect.options.clone(),
                     }
                 };
 
                 resp.send(BrokerAck::ConnAck(
                     ConnAck::new(
-                        client.expiry > 0,
+                        client.options.session_expiry_interval > 0,
                         ReturnCode::Success,
                         if connect.generate_client_id {
                             Some(client.client_id.clone())
                         } else {
                             None
                         },
-                        connect.topic_alias_maximum,
-                    ),
+                    )
+                    .with_topic_alias_maximum(connect.options.topic_alias_maximum)
+                    .with_session_expiry_interval(connect.options.session_expiry_interval),
                     client.store.take(),
                 ))
                 .ok();
@@ -183,7 +184,7 @@ impl Broker {
                     g_utils::TruncateDisplay::new(&client.client_id, 24),
                     client.version,
                     client.clear_start,
-                    client.expiry
+                    client.options.session_expiry_interval,
                 );
                 operator_helper
                     .remove_client(client.client_id.clone())
@@ -210,7 +211,7 @@ impl Broker {
                                 options.qos,
                                 options.no_local,
                                 options.subscription_identifier,
-                                client.expiry > 0,
+                                client.options.session_expiry_interval > 0,
                                 LocalClientSink::new(
                                     client.client_helper.get(),
                                     broker_helper.clone(),
@@ -225,7 +226,7 @@ impl Broker {
                         }
                     }
                 }
-                if client.expiry > 0 {
+                if client.options.session_expiry_interval > 0 {
                     store_clients.insert(connect.client_id.clone(), client);
                 } else {
                     clean_clients.insert(connect.client_id.clone(), client);
@@ -269,7 +270,7 @@ impl Broker {
                                         options.qos,
                                         options.no_local,
                                         options.subscription_identifier,
-                                        client.expiry > 0,
+                                        client.options.session_expiry_interval > 0,
                                         LocalClientSink::new(
                                             client.client_helper.get(),
                                             broker_helper.clone(),
@@ -286,9 +287,7 @@ impl Broker {
                                             topic: msg.topic.clone(),
                                             payload: msg.payload.clone(),
                                             user_properties: msg.user_properties.clone(),
-                                            expiry_at: msg.expiry_at,
-                                            subscription_identifier: options
-                                                .subscription_identifier,
+                                            options: msg.options.clone(),
                                         })
                                         .ok();
                                 }
@@ -356,11 +355,12 @@ impl Broker {
                     resp.send(BrokerAck::UnsubAck(ack)).ok();
                 }
             }
-            Disconnected(client_id, code, store) => {
-                if let Some(client) = clean_clients.remove(&client_id) {
-                    let _ = operator_helper
-                        .remove_client(client.client_id.clone())
-                        .await;
+            Disconnected(client_id, code, session_expiry_interval, store) => {
+                let client = clean_clients
+                    .remove(&client_id)
+                    .or_else(|| store_clients.remove(&client_id));
+
+                if let Some(mut client) = client {
                     if let Some(ref will) = client.will {
                         if code != ReturnCode::Success {
                             Self::prepare_will_message(
@@ -370,21 +370,20 @@ impl Broker {
                             );
                         }
                     }
-                } else {
-                    if let Some(client) = store_clients.get_mut(&client_id) {
+
+                    if let Some(interval) = session_expiry_interval {
+                        client.options.session_expiry_interval = interval;
+                    }
+
+                    if client.options.session_expiry_interval > 0 {
                         client.disconnected_tm = coarsetime::Clock::now_since_epoch().as_secs();
                         client.connected = false;
                         client.store = Some(store);
-
-                        if let Some(ref will) = client.will {
-                            if code != ReturnCode::Success {
-                                Self::prepare_will_message(
-                                    broker_helper,
-                                    client_id.clone(),
-                                    will.clone(),
-                                );
-                            }
-                        }
+                        store_clients.insert(client_id.clone(), client);
+                    } else {
+                        let _ = operator_helper
+                            .remove_client(client.client_id.clone())
+                            .await;
                     }
                 }
             }
@@ -395,7 +394,7 @@ impl Broker {
                 topic,
                 payload,
                 user_properties,
-                expiry_at,
+                options,
             } => {
                 let client = store_clients
                     .get(&client_id)
@@ -408,7 +407,7 @@ impl Broker {
                                 qos,
                                 payload.clone(),
                                 user_properties.clone(),
-                                expiry_at,
+                                options.clone(),
                             )
                             .await
                             .ok();
@@ -422,7 +421,7 @@ impl Broker {
                             topic,
                             payload,
                             user_properties,
-                            expiry_at,
+                            options,
                         )
                         .await;
                 }
@@ -452,9 +451,9 @@ impl Broker {
                 qos,
                 payload,
                 user_properties,
-                expiry_at,
+                options,
             } => {
-                if payload.is_empty() || expiry_at == Some(0) {
+                if payload.is_empty() || options.message_expiry_interval == Some(0) {
                     retain_trie.remove(&topic);
                 } else {
                     retain_trie.insert(
@@ -464,7 +463,7 @@ impl Broker {
                             topic: topic.clone(),
                             payload: payload.clone(),
                             user_properties: user_properties.clone(),
-                            expiry_at,
+                            options,
                         },
                     );
                 }
@@ -500,11 +499,11 @@ impl Broker {
                         store_clients.retain(|_, client| {
                             if client.connected {
                                 true
-                            } else if client.expiry == 0 {
+                            } else if client.options.session_expiry_interval== 0 {
                                 remove_ids.push(client.client_id.clone());
                                 false
                             } else {
-                                let result = now - client.disconnected_tm < client.expiry as u64;
+                                let result = now - client.disconnected_tm < client.options.session_expiry_interval as u64;
                                 if !result {
                                     remove_ids.push(client.client_id.clone());
                                 }

@@ -12,6 +12,7 @@ pub struct SubscribeOption {
     pub(crate) no_local: bool,
     pub(crate) retain_as_published: bool,
     pub(crate) retain_handling: u8,
+
     pub(crate) subscription_identifier: Option<u32>,
 }
 
@@ -48,16 +49,17 @@ impl SubAck {
         }
     }
 
-    pub fn into(self, _version: MqttProtocolVersion) -> Bytes {
+    pub fn into(self, version: MqttProtocolVersion) -> Bytes {
         let mut buf = BytesMut::with_capacity(2 + self.return_codes.len());
 
         buf.put_u16(self.packet_id);
-        //if version == MqttProtocolVersion::V5 {
-        //buf.put_u8(self.properties.len() as u8);
-        //for prop in self.properties {
-        //buf.put(prop.into_bytes());
-        //}
-        //}
+        if version == MqttProtocolVersion::V5 {
+            buf.put_u8(0);
+            //buf.put_u8(self.properties.len() as u8);
+            //for prop in self.properties {
+            //buf.put(prop.into_bytes());
+            //}
+        }
 
         for code in self.return_codes {
             buf.put_u8(code.code());
@@ -79,6 +81,7 @@ impl UnsubAck {
 
         buf.put_u16(self.packet_id);
         if version == MqttProtocolVersion::V5 {
+            buf.put_u8(0);
             //let mut prop_bytes = BytesMut::new();
             //for prop in self.properties {
             //prop_bytes.put(prop.into_bytes());

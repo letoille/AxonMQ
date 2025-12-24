@@ -4,6 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 use super::protocol::{
     conn::{ConnAck, Connect},
     property::PropertyUser,
+    publish::PublishOptions,
     subscribe::{SubAck, Subscribe, UnsubAck, Unsubscribe},
 };
 use super::{QoS, code::ReturnCode};
@@ -32,7 +33,7 @@ pub(crate) enum BrokerCommand {
         unsubscribe: Unsubscribe,
         resp: oneshot::Sender<BrokerAck>,
     },
-    Disconnected(String, ReturnCode, Store),
+    Disconnected(String, ReturnCode, Option<u32>, Store),
     WillPublish {
         client_id: String,
         retain: bool,
@@ -40,14 +41,14 @@ pub(crate) enum BrokerCommand {
         topic: String,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
+        options: PublishOptions,
     },
     RetainMessage {
         topic: String,
         qos: QoS,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
+        options: PublishOptions,
     },
     StoreMsg {
         client_id: String,
@@ -64,7 +65,6 @@ pub enum ClientCommand {
         retain: bool,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
-        subscription_identifier: Option<u32>,
+        options: PublishOptions,
     },
 }

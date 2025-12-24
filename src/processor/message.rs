@@ -4,6 +4,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
+use crate::mqtt::protocol::publish::PublishOptions;
 use crate::mqtt::{QoS, protocol::property::PropertyUser};
 use crate::utils;
 
@@ -58,16 +59,14 @@ impl std::fmt::Display for MetadataValue {
 
 #[derive(Clone)]
 pub struct Message {
-    pub client_id: String,
-    pub topic: String,
     pub qos: QoS,
     pub retain: bool,
-    pub expiry_at: Option<u64>,
+    pub client_id: String,
 
+    pub topic: String,
     pub payload: Bytes,
     pub user_properties: Vec<PropertyUser>,
-
-    pub subscription_identifier: Option<u32>,
+    pub options: PublishOptions,
 
     pub metadata: HashMap<String, MetadataValue>,
 }
@@ -107,7 +106,6 @@ impl Message {
         topic: String,
         qos: QoS,
         retain: bool,
-        expiry_at: Option<u64>,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
     ) -> Self {
@@ -116,16 +114,22 @@ impl Message {
             topic,
             qos,
             retain,
-            expiry_at,
             payload,
             user_properties,
             metadata: HashMap::new(),
-            subscription_identifier: None,
+            options: PublishOptions::default(),
         }
     }
 
+    pub fn with_options(mut self, options: PublishOptions) -> Self {
+        self.options = options;
+        self
+    }
+
     pub fn with_subscription_identifier(mut self, subscription_identifier: Option<u32>) -> Self {
-        self.subscription_identifier = subscription_identifier;
+        self.options = self
+            .options
+            .with_subscription_identifier(subscription_identifier);
         self
     }
 }

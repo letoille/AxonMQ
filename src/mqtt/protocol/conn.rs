@@ -10,25 +10,40 @@ use super::super::{MqttProtocolVersion, code::ReturnCode, error::MqttProtocolErr
 use super::{message::Message, property::Property, will::Will};
 
 #[derive(Clone)]
+pub struct ConnectOptions {
+    pub(crate) session_expiry_interval: u32,
+    pub(crate) packet_maximum: u32,
+    pub(crate) topic_alias_maximum: u16,
+    pub(crate) inflight_maximum: u16,
+}
+
+impl std::default::Default for ConnectOptions {
+    fn default() -> Self {
+        let config = CONFIG.get().unwrap();
+        ConnectOptions {
+            session_expiry_interval: 0,
+            inflight_maximum: config.mqtt.settings.max_receive_queue,
+            packet_maximum: config.mqtt.settings.max_packet_size,
+            topic_alias_maximum: 0,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Connect {
     pub(crate) version: MqttProtocolVersion,
     pub(crate) keep_alive: u16,
 
-    pub(crate) client_id: String,
     pub(crate) generate_client_id: bool,
+    pub(crate) clean_start: bool,
+
+    pub(crate) client_id: String,
 
     pub(crate) username: Option<String>,
     pub(crate) password: Option<String>,
 
-    pub(crate) clean_start: bool,
-
     pub(crate) will: Option<Will>,
-
-    pub(crate) session_expiry_interval: u32,
-    pub(crate) inflight_maximum: u16,
-    pub(crate) packet_maximum: u32,
-
-    pub(crate) topic_alias_maximum: u16,
+    pub(crate) options: ConnectOptions,
 }
 
 impl From<Connect> for Bytes {
@@ -97,34 +112,29 @@ impl Connect {
             properties = Property::try_from_properties(rdr)?;
         }
 
-        let mut session_expiry_interval =
-            CONFIG.get().unwrap().mqtt.settings.session_expiry_interval;
-        let mut inflight_maximum = CONFIG.get().unwrap().mqtt.settings.max_receive_queue;
-        let mut packet_maximum = CONFIG.get().unwrap().mqtt.settings.max_packet_size;
-        let mut topic_alias_maximum = 0;
-
+        let mut options = ConnectOptions::default();
         for prop in properties.into_iter() {
             match prop {
                 Property::SessionExpiryInterval(v) => {
-                    if session_expiry_interval == 0 || v < session_expiry_interval {
-                        session_expiry_interval = v;
+                    if v <= CONFIG.get().unwrap().mqtt.settings.session_expiry_interval {
+                        options.session_expiry_interval = v;
                     }
                 }
                 Property::MaximumPacketSize(v) => {
-                    if packet_maximum == 0 || v < packet_maximum {
-                        packet_maximum = v;
+                    if options.packet_maximum == 0 || v < options.packet_maximum {
+                        options.packet_maximum = v;
                     }
                 }
                 Property::ReceiveMaximum(v) => {
-                    if inflight_maximum == 0 || v < inflight_maximum {
-                        inflight_maximum = v;
+                    if options.inflight_maximum == 0 || v < options.inflight_maximum {
+                        options.inflight_maximum = v;
                     }
                 }
                 Property::TopicAliasMaximum(v) => {
                     if v <= CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum {
-                        topic_alias_maximum = v;
+                        options.topic_alias_maximum = v;
                     } else {
-                        topic_alias_maximum =
+                        options.topic_alias_maximum =
                             CONFIG.get().unwrap().mqtt.settings.topic_alias_maximum;
                     }
                 }
@@ -139,8 +149,10 @@ impl Connect {
         let _ = rdr.read_exact(&mut client_id_buf)?;
         let client_id = String::from_utf8_lossy(&client_id_buf).into_owned();
 
-        let mut will_delay_interval = None;
-        let mut will_expiry_interval = None;
+        //let mut will_delay_interval = None;
+        //let mut will_expiry_interval = None;
+
+        let mut will_options = super::will::WillOptions::default();
         let mut will_user_properties = Vec::new();
 
         if proto_version == MqttProtocolVersion::V5 && will_flag {
@@ -148,8 +160,27 @@ impl Connect {
 
             for prop in will_properties.into_iter() {
                 match prop {
-                    Property::WillDelayInterval(v) => will_delay_interval = Some(v),
-                    Property::MessageExpiryInterval(v) => will_expiry_interval = Some(v as u64),
+                    Property::WillDelayInterval(v) => {
+                        will_options.will_delay_interval = Some(v);
+                    }
+                    Property::MessageExpiryInterval(v) => {
+                        will_options.options = will_options.options.with_expiry(Some(v));
+                    }
+                    Property::TopicAlias(v) => {
+                        will_options.options.topic_alias = Some(v);
+                    }
+                    Property::PayloadFormatIndicator(v) => {
+                        will_options.options.payload_format_indicator = Some(v);
+                    }
+                    Property::ContentType(v) => {
+                        will_options.options.content_type = Some(v);
+                    }
+                    Property::ResponseTopic(v) => {
+                        will_options.options.response_topic = Some(v);
+                    }
+                    Property::CorrelationData(v) => {
+                        will_options.options.correlation_data = Some(Bytes::from(v));
+                    }
                     Property::UserProperty(v) => {
                         will_user_properties.push(v);
                     }
@@ -179,8 +210,7 @@ impl Connect {
                 topic: will_topic,
                 payload: will_msg,
                 user_properties: will_user_properties,
-                will_delay_interval: will_delay_interval.unwrap_or(0),
-                expiry_interval: will_expiry_interval,
+                options: will_options,
             })
         } else {
             None
@@ -221,11 +251,8 @@ impl Connect {
             username,
             password,
             will,
-            session_expiry_interval,
-            inflight_maximum,
-            packet_maximum,
             generate_client_id,
-            topic_alias_maximum,
+            options,
         }))
     }
 }
@@ -233,11 +260,15 @@ impl Connect {
 #[derive(Clone)]
 pub struct Disconnect {
     pub(crate) reason: ReturnCode,
+    pub(crate) session_expiry_interval: Option<u32>,
 }
 
 impl Disconnect {
     pub(crate) fn new(reason: ReturnCode) -> Self {
-        Disconnect { reason }
+        Disconnect {
+            reason,
+            session_expiry_interval: None,
+        }
     }
 
     pub(crate) fn into(self, version: MqttProtocolVersion) -> Bytes {
@@ -257,13 +288,62 @@ impl Disconnect {
         if version == MqttProtocolVersion::V3_1_1 || version == MqttProtocolVersion::V3 {
             return Ok(Message::Disconnect(Disconnect {
                 reason: ReturnCode::Success,
+                session_expiry_interval: None,
             }));
         }
 
         let reason = rdr.read_u8()?;
         let reason = ReturnCode::try_from(reason)?;
+        let properties = Property::try_from_properties(rdr)?;
+        let mut session_expiry_interval = None;
 
-        Ok(Message::Disconnect(Disconnect { reason }))
+        for prop in properties.into_iter() {
+            match prop {
+                Property::SessionExpiryInterval(v) => {
+                    if v <= CONFIG.get().unwrap().mqtt.settings.session_expiry_interval {
+                        session_expiry_interval = Some(v);
+                    } else {
+                        session_expiry_interval =
+                            Some(CONFIG.get().unwrap().mqtt.settings.session_expiry_interval);
+                    }
+                }
+                _ => {
+                    debug!("ignore property in DISCONNECT: {}", prop);
+                }
+            }
+        }
+
+        Ok(Message::Disconnect(Disconnect {
+            reason,
+            session_expiry_interval,
+        }))
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnAckOptions {
+    pub(crate) topic_alias_maximum: u16,
+    pub(crate) session_expiry_interval: u32,
+}
+
+impl ConnAckOptions {
+    fn with_topic_alias_maximum(mut self, v: u16) -> Self {
+        self.topic_alias_maximum = v;
+        self
+    }
+
+    fn with_session_expiry_interval(mut self, v: u32) -> Self {
+        self.session_expiry_interval = v;
+        self
+    }
+}
+
+impl std::default::Default for ConnAckOptions {
+    fn default() -> Self {
+        ConnAckOptions {
+            topic_alias_maximum: 0,
+            session_expiry_interval: 0,
+        }
     }
 }
 
@@ -272,7 +352,7 @@ pub struct ConnAck {
     session_present: bool,
     pub(crate) return_code: ReturnCode,
     generated_client_id: Option<String>,
-    pub(crate) topic_alias_maximum: u16,
+    pub(crate) options: ConnAckOptions,
 }
 
 impl ConnAck {
@@ -280,14 +360,23 @@ impl ConnAck {
         session_present: bool,
         return_code: ReturnCode,
         generated_client_id: Option<String>,
-        topic_alias_maximum: u16,
     ) -> Self {
         ConnAck {
             session_present,
             return_code,
             generated_client_id,
-            topic_alias_maximum,
+            options: ConnAckOptions::default(),
         }
+    }
+
+    pub fn with_topic_alias_maximum(mut self, v: u16) -> Self {
+        self.options = self.options.with_topic_alias_maximum(v);
+        self
+    }
+
+    pub fn with_session_expiry_interval(mut self, v: u32) -> Self {
+        self.options = self.options.with_session_expiry_interval(v);
+        self
     }
 
     pub(crate) fn into(self, version: MqttProtocolVersion) -> Bytes {
@@ -300,10 +389,10 @@ impl ConnAck {
         let config = CONFIG.get().unwrap();
         if version == MqttProtocolVersion::V5 {
             let mut properties = vec![
-                Property::SessionExpiryInterval(config.mqtt.settings.session_expiry_interval),
+                Property::SessionExpiryInterval(self.options.session_expiry_interval),
                 Property::ServerKeepAlive(config.mqtt.settings.keep_alive),
                 Property::ReceiveMaximum(config.mqtt.settings.max_receive_queue),
-                Property::TopicAliasMaximum(self.topic_alias_maximum),
+                Property::TopicAliasMaximum(self.options.topic_alias_maximum),
                 Property::RetainAvailable(1),
                 Property::WildcardSubscriptionAvailable(1),
                 Property::SubscriptionIdentifierAvailable(1),

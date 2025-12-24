@@ -29,8 +29,7 @@ impl Sink for LocalClientSink {
             retain: message.retain,
             payload: message.payload,
             user_properties: message.user_properties,
-            expiry_at: message.expiry_at,
-            subscription_identifier: message.subscription_identifier,
+            options: message.options,
         };
 
         if persist && message.qos != QoS::AtMostOnce {

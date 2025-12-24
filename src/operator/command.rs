@@ -1,6 +1,9 @@
 use bytes::Bytes;
 
-use crate::mqtt::{QoS, protocol::property::PropertyUser};
+use crate::mqtt::{
+    QoS,
+    protocol::{property::PropertyUser, publish::PublishOptions},
+};
 
 use super::sink::Sink;
 
@@ -33,7 +36,7 @@ pub(crate) enum OperatorCommand {
         topic: String,
         payload: Bytes,
         user_properties: Vec<PropertyUser>,
-        expiry_at: Option<u64>,
+        options: PublishOptions,
     },
     SparkPlugBPublish {
         client_id: String,

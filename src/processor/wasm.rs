@@ -8,6 +8,8 @@ use wasmtime::component::{Component, HasSelf, Linker, ResourceTable, bindgen};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
+use crate::mqtt::protocol::publish::PublishOptions;
+
 use super::Processor;
 use super::error::ProcessorError;
 use super::message::Message;
@@ -182,7 +184,7 @@ impl From<Message> for handler::Message {
             payload: message.payload.to_vec(),
             metadata,
             user_properties,
-            subscriber_identifier: message.subscription_identifier,
+            subscriber_identifier: message.options.subscription_identifier,
         };
 
         msg
@@ -228,16 +230,17 @@ impl From<handler::Message> for Message {
                 )
             })
             .collect();
+        let options =
+            PublishOptions::default().with_subscription_identifier(message.subscriber_identifier);
 
         Message {
             client_id: message.client_id,
             topic: message.topic,
             qos,
             retain: message.retain,
-            expiry_at: None,
             payload,
             user_properties,
-            subscription_identifier: message.subscriber_identifier,
+            options,
             metadata,
         }
     }

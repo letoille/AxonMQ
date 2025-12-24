@@ -86,6 +86,13 @@ This document contains a series of test cases for verifying the core functionali
     *   Client A's subscription is still valid.
     *   Client A does **not** receive the QoS 0 message that was published while it was offline.
 
+#### ✔️ **Case ID: SESS-2.6**
+*   **Description**: Verify that the `Session Expiry Interval` in a `DISCONNECT` packet overrides the interval set during connection.
+*   **MQTT v5.0 Spec Reference**: Section `3.14.2.2.2 Session Expiry Interval` - The value in `DISCONNECT` replaces the value established in `CONNECT`.
+*   **Setup**: Client A connects with `clean_start=false` and `Session Expiry Interval = 300` seconds.
+*   **Action**: Client A sends a `DISCONNECT` packet with `Session Expiry Interval = 0`.
+*   **Expected Result**: The Broker must immediately discard the session state, not waiting for 300 seconds.
+
 ---
 
 ## Part 3: Message Lifecycle (Message Expiry)
@@ -139,6 +146,13 @@ This document contains a series of test cases for verifying the core functionali
 *   **Setup**: Client C subscribes to `T_LWT` (QoS 2). Client A sets up an LWT with QoS 2 upon connection.
 *   **Action**: Forcibly interrupt Client A's TCP connection.
 *   **Expected Result**: Client C receives the LWT message at QoS 2 and completes the QoS 2 acknowledgment flow.
+
+#### ✔️ **Case ID: LWT-4.4**
+*   **Description**: Verify that properties of a Will Message (e.g., Message Expiry) are respected upon publication, especially when retained.
+*   **MQTT v5.0 Spec Reference**: Section `3.1.3.2 Will Properties`.
+*   **Setup**: Client A connects with an LWT for topic `T_LWT_PROP_RETAIN`. The Will has `RETAIN=true` and `Message Expiry Interval = 5` seconds.
+*   **Action**: 1. Client A disconnects abnormally. 2. Wait for 10 seconds. 3. Client B subscribes to `T_LWT_PROP_RETAIN`.
+*   **Expected Result**: The Broker publishes the Will Message and retains it. However, after 5 seconds, the retained Will Message expires. Client B should not receive any message upon subscription.
 
 ---
 
@@ -299,3 +313,49 @@ This document contains a series of test cases for verifying the core functionali
     *   Client B publishes a message to topic `T_PACKET_SIZE` where the total `PUBLISH` packet size exceeds 100 bytes (e.g., 200 bytes).
 *   **Expected Result**:
     *   The Broker **must not** forward the oversized `PUBLISH` packet to Client A.
+
+---
+
+## Part 10: Request/Response Properties
+
+**Objective**: To verify the Broker's support for the request/response pattern using `Response Topic` and `Correlation Data`.
+
+#### ✔️ **Case ID: REQ-10.1**
+*   **Description**: Verify that the Broker correctly forwards `Response Topic` and `Correlation Data` to a responding client.
+*   **MQTT v5.0 Spec Reference**: Sections `3.3.2.3.6 Response Topic` & `3.3.2.3.7 Correlation Data`.
+*   **Setup**: Client B (responder) subscribes to `request/topic`. Client A (requester) subscribes to `response/topic`.
+*   **Action**: Client A publishes a message to `request/topic` with `Response Topic` set to `response/topic` and `Correlation Data` set to a specific value (e.g., "request123").
+*   **Expected Result**: 1. Client B receives the `PUBLISH` message containing both the `Response Topic` and `Correlation Data` properties. 2. Client B can then publish a response to the received `Response Topic` with the same `Correlation Data`, which Client A will receive.
+
+---
+
+## Part 11: Message Context Properties
+
+**Objective**: To verify that the Broker correctly forwards descriptive message properties.
+
+#### ✔️ **Case ID: CTX-11.1**
+*   **Description**: Verify the end-to-end transport of `User Property` in a `PUBLISH` packet.
+*   **MQTT v5.0 Spec Reference**: Section `3.3.2.3.9 User Property`.
+*   **Setup**: Client B subscribes to `T_USER_PROP`.
+*   **Action**: Client A publishes a message to `T_USER_PROP` containing one or more `User Property` key-value pairs.
+*   **Expected Result**: Client B receives the `PUBLISH` message with the `User Property` key-value pairs unmodified.
+
+#### ✔️ **Case ID: CTX-11.2**
+*   **Description**: Verify the end-to-end transport of `Content Type` and `Payload Format Indicator`.
+*   **MQTT v5.0 Spec Reference**: Sections `3.3.2.3.8 Content Type` & `3.3.2.3.5 Payload Format Indicator`.
+*   **Setup**: Client B subscribes to `T_CONTENT_TYPE`.
+*   **Action**: Client A publishes a message to `T_CONTENT_TYPE` with `Payload Format Indicator = 1` (UTF-8) and `Content Type = "application/json"`.
+*   **Expected Result**: Client B receives the `PUBLISH` message with both `Payload Format Indicator` and `Content Type` properties intact.
+
+---
+
+## Part 12: Subscription Properties
+
+**Objective**: To verify the Broker's handling of properties related to subscriptions.
+
+#### ✔️ **Case ID: SUB-12.1**
+*   **Description**: Verify the Broker correctly associates and forwards a `Subscription Identifier`.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.2.1.2 Subscription Identifier`.
+*   **Setup**: Client A subscribes to topic `data/#` with `Subscription Identifier = 10`.
+*   **Action**: Client B publishes a message to `data/sensor1`.
+*   **Expected Result**: The `PUBLISH` packet received by Client A must contain a `Subscription Identifier` property with the value `10`.

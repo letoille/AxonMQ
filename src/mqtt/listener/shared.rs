@@ -85,17 +85,17 @@ pub async fn process_client<S>(
 
                 if conn.version == MqttProtocolVersion::V5 {
                     async_client.framed.codec_mut().with_v5();
-                    client_topic_alias_maximum = ack.topic_alias_maximum;
+                    client_topic_alias_maximum = ack.options.topic_alias_maximum;
                 }
-                inflight_maximum = conn.inflight_maximum;
-                async_client.framed.codec_mut().with_packet_size(conn.packet_maximum);
+                inflight_maximum = conn.options.inflight_maximum;
+                async_client.framed.codec_mut().with_packet_size(conn.options.packet_maximum);
 
                 async_client
                     .framed
                     .send(Message::ConnAck(ack))
                     .await
                     .ok();
-                info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.session_expiry_interval);
+                info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.options.session_expiry_interval);
             }
             return Ok(());
         } else {
@@ -129,7 +129,7 @@ pub async fn process_client<S>(
         tokio::select! {
             _ = keepalive_tk.tick(), if coarsetime::Clock::now_since_epoch().as_secs() - client_msg_tm > (keep_alive * 3 / 2) as u64 => {
                 warn!(parent: &span, "keep alive timeout, disconnecting");
-                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, message_store).await.ok();
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, None, message_store).await.ok();
                 async_client.framed.close().await.ok();
                 break;
             }
@@ -151,8 +151,8 @@ pub async fn process_client<S>(
                         async_client.framed.close().await.ok();
                         break;
                     }
-                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, expiry_at, subscription_identifier}=> {
-                        if let Some(expiry_at) = expiry_at {
+                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, options}=> {
+                        if let Some(expiry_at) = options.message_expiry_at {
                             if expiry_at != 0 && expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
                             }
@@ -167,12 +167,12 @@ pub async fn process_client<S>(
                             false,
                             qos,
                             retain,
-                            topic.clone(),
+                            topic,
                             pid,
-                            payload.clone(),
-                            user_properties.clone(),
-                        ).with_subscription_identifier(subscription_identifier);
-                        if qos != QoS::AtMostOnce {
+                            payload,
+                            user_properties,
+                        ).with_options(options);
+                        if qos != QoS::AtMostOnce && (publish.options.message_expiry_interval.is_none() || publish.options.message_expiry_interval.unwrap() != 0) {
                             if message_store.inflight_insert(publish.clone()) {
                                 let msg = Message::Publish(publish);
                                 let _ = async_client.framed.send(msg).await;
@@ -191,7 +191,7 @@ pub async fn process_client<S>(
                     } else {
                         info!(parent: &span, "disconnected");
                     }
-                    broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
+                    broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, None, message_store).await.ok();
                     async_client.framed.close().await.ok();
                     break;
                 }
@@ -199,7 +199,7 @@ pub async fn process_client<S>(
                 if let Message::PacketTooLarge = msg {
                     warn!(parent: &span, "packet too large, disconnecting");
                     async_client.framed.send(Message::Disconnect(Disconnect::new(ReturnCode::PacketTooLarge))).await.ok();
-                    broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, message_store).await.ok();
+                    broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, None, message_store).await.ok();
                     async_client.framed.close().await.ok();
                     break;
                 }
@@ -214,10 +214,10 @@ pub async fn process_client<S>(
                     Ok(None) => {}
                     Err(e) => {
                         warn!(parent: &span, "connection error : {}", e);
-                        if let MqttProtocolError::Disconnected(code) = e {
-                            broker_helper.disconnected(client_id.as_str(), code, message_store).await.ok();
+                        if let MqttProtocolError::Disconnected(code, session_expiry_interval) = e {
+                            broker_helper.disconnected(client_id.as_str(), code, session_expiry_interval, message_store).await.ok();
                         } else {
-                            broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
+                            broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, None, message_store).await.ok();
                         }
                         async_client.framed.close().await.ok();
                         break;
@@ -243,7 +243,10 @@ pub async fn handle_message(
             Err(MqttProtocolError::InvalidMessageType)
         }
         Message::PingReq => Ok(Some(Message::PingResp)),
-        Message::Disconnect(dis) => Err(MqttProtocolError::Disconnected(dis.reason)),
+        Message::Disconnect(dis) => Err(MqttProtocolError::Disconnected(
+            dis.reason,
+            dis.session_expiry_interval,
+        )),
         Message::Subscribe(sub) => {
             for (topic, options) in sub.topics.iter() {
                 debug!(
@@ -266,10 +269,11 @@ pub async fn handle_message(
             Ok(Some(Message::UnsubAck(ack)))
         }
         Message::Publish(mut publish) => {
-            if let Some(topic_alias) = publish.topic_alias {
+            if let Some(topic_alias) = publish.options.topic_alias {
                 if topic_alias == 0 {
                     return Err(MqttProtocolError::Disconnected(
                         ReturnCode::TopicAliasInvalid,
+                        None,
                     ));
                 }
 
@@ -287,6 +291,7 @@ pub async fn handle_message(
                             } else {
                                 return Err(MqttProtocolError::Disconnected(
                                     ReturnCode::TopicAliasInvalid,
+                                    None,
                                 ));
                             }
                         }
@@ -296,7 +301,7 @@ pub async fn handle_message(
                 }
             }
 
-            if publish.topic_alias.is_some() && publish.topic.is_empty()
+            if publish.options.topic_alias.is_some() && publish.topic.is_empty()
                 || !utils::pub_topic_valid(&publish.topic)
             {
                 if publish.qos == QoS::AtLeastOnce {
@@ -326,7 +331,7 @@ pub async fn handle_message(
                             publish.qos,
                             publish.payload.clone(),
                             publish.user_properties.clone(),
-                            publish.expiry_at,
+                            publish.options.clone(),
                         )
                         .await
                         .ok();
@@ -340,7 +345,7 @@ pub async fn handle_message(
                         publish.topic.clone(),
                         publish.payload,
                         publish.user_properties,
-                        publish.expiry_at,
+                        publish.options,
                     )
                     .await
                     .ok();
@@ -358,6 +363,7 @@ pub async fn handle_message(
                 if !message_store.qos2_insert(publish) {
                     Err(MqttProtocolError::Disconnected(
                         ReturnCode::ReceiveMaximumExceeded,
+                        None,
                     ))
                 } else {
                     Ok(Some(Message::PubRec(pub_rec)))
@@ -370,7 +376,7 @@ pub async fn handle_message(
                             publish.qos,
                             publish.payload.clone(),
                             publish.user_properties.clone(),
-                            publish.expiry_at,
+                            publish.options.clone(),
                         )
                         .await
                         .ok();
@@ -383,7 +389,7 @@ pub async fn handle_message(
                         publish.topic.clone(),
                         publish.payload,
                         publish.user_properties,
-                        publish.expiry_at,
+                        publish.options,
                     )
                     .await
                     .ok();
@@ -422,7 +428,7 @@ pub async fn handle_message(
                         publish.topic,
                         publish.payload,
                         publish.user_properties,
-                        publish.expiry_at,
+                        publish.options,
                     )
                     .await
                     .ok();

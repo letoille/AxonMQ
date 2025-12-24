@@ -167,7 +167,7 @@ impl Matcher {
                 topic,
                 payload,
                 user_properties,
-                expiry_at,
+                options,
             } => {
                 let (clients_iters, group_clients_map) =
                     Self::find_clients(cache, trie, &client_id, &topic);
@@ -184,10 +184,10 @@ impl Matcher {
                             topic.clone(),
                             qos.min(client.qos),
                             retain,
-                            expiry_at,
                             payload.clone(),
                             user_properties.clone(),
                         )
+                        .with_options(options.clone())
                         .with_subscription_identifier(client.subscription_id),
                         client.persist,
                     );
@@ -195,10 +195,9 @@ impl Matcher {
 
                 while let Some(client) = clients_iters.next() {
                     trace!(
-                        "send to client: {}, topic: {}, expiry_at: {:?}",
+                        "send to client: {}, topic: {}",
                         g_utils::TruncateDisplay::new(&client.client_id, 24),
                         g_utils::TruncateDisplay::new(&topic, 128),
-                        expiry_at
                     );
                     let _ = client.sink.deliver(
                         Message::new(
@@ -206,10 +205,10 @@ impl Matcher {
                             topic.clone(),
                             qos.min(client.qos),
                             retain,
-                            expiry_at,
                             payload.clone(),
                             user_properties.clone(),
                         )
+                        .with_options(options.clone())
                         .with_subscription_identifier(client.subscription_id),
                         client.persist,
                     );

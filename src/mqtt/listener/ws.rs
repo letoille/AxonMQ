@@ -252,15 +252,15 @@ async fn handle_websocket_connection<S>(
 
                                     if conn.version == MqttProtocolVersion::V5 {
                                         codec.with_v5();
-                                        client_topic_alias_maximum = ack.topic_alias_maximum;
+                                        client_topic_alias_maximum = ack.options.topic_alias_maximum;
                                     }
-                                    inflight_maximum = conn.inflight_maximum;
-                                    codec.with_packet_size(conn.packet_maximum);
+                                    inflight_maximum = conn.options.inflight_maximum;
+                                    codec.with_packet_size(conn.options.packet_maximum);
 
                                     let mut write_buf = BytesMut::new();
                                     codec.encode(Message::ConnAck(ack), &mut write_buf).unwrap();
                                     ws_stream.send(WsMessage::Binary(write_buf.freeze())).await.ok();
-                                    debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.session_expiry_interval);
+                                    debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.options.session_expiry_interval);
                                     return Ok(()); // Handshake successful
                                 }
                             }
@@ -314,7 +314,7 @@ async fn handle_websocket_connection<S>(
         tokio::select! {
             _ = keepalive_tk.tick(), if coarsetime::Clock::now_since_epoch().as_secs() - client_msg_tm > (keep_alive * 3 / 2) as u64 => {
                 warn!(parent: &span, "keep alive timeout, disconnecting");
-                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, message_store).await.ok();
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::KeepAliveTimeout, None, message_store).await.ok();
                 ws_stream.close(None).await.ok();
                 break;
             }
@@ -343,8 +343,8 @@ async fn handle_websocket_connection<S>(
                         ws_stream.close(None).await.ok();
                         break;
                     }
-                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, expiry_at, ..} => {
-                        if let Some(expiry_at) = expiry_at {
+                    ClientCommand::Publish{qos, retain, topic, payload, user_properties, options}=> {
+                        if let Some(expiry_at) = options.message_expiry_at{
                             if expiry_at <= coarsetime::Clock::now_since_epoch().as_secs() {
                                 continue;
                             }
@@ -392,7 +392,7 @@ async fn handle_websocket_connection<S>(
                                         let mut write_buf = BytesMut::new();
                                         codec.encode(Message::Disconnect(Disconnect::new(ReturnCode::PacketTooLarge)), &mut write_buf).unwrap();
                                         ws_stream.send(WsMessage::Binary(write_buf.freeze())).await.ok();
-                                        broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, message_store.clone()).await.ok();
+                                        broker_helper.disconnected(client_id.as_str(), ReturnCode::PacketTooLarge, None, message_store.clone()).await.ok();
                                         ws_stream.close(None).await.ok();
                                         break;
                                     }
@@ -409,10 +409,10 @@ async fn handle_websocket_connection<S>(
                                         Ok(None) => {}
                                         Err(e) => {
                                             debug!(parent: &span, "error handling message: {}", e);
-                                            if let MqttProtocolError::Disconnected(code) = e {
-                                                broker_helper.disconnected(client_id.as_str(), code, message_store.clone()).await.ok();
+                                            if let MqttProtocolError::Disconnected(code, session_expiry_interval) = e {
+                                                broker_helper.disconnected(client_id.as_str(), code, session_expiry_interval, message_store.clone()).await.ok();
                                             } else {
-                                                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store.clone()).await.ok();
+                                                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, None, message_store.clone()).await.ok();
                                             }
                                             ws_stream.close(None).await.ok();
                                             break;
@@ -430,7 +430,7 @@ async fn handle_websocket_connection<S>(
                     }
                     WsMessage::Close(_) => {
                         debug!(parent: &span, "client closed connection");
-                        broker_helper.disconnected(client_id.as_str(), ReturnCode::Success, message_store).await.ok();
+                        broker_helper.disconnected(client_id.as_str(), ReturnCode::Success, None, message_store).await.ok();
                         break;
                     }
                     WsMessage::Ping(data) => {
@@ -440,7 +440,7 @@ async fn handle_websocket_connection<S>(
                 }
             }
             else => {
-                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, message_store).await.ok();
+                broker_helper.disconnected(client_id.as_str(), ReturnCode::UnspecifiedError, None, message_store).await.ok();
                 break;
             }
         }

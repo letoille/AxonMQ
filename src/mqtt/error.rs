@@ -18,7 +18,7 @@ pub enum MqttProtocolError {
     #[error("error: {0}")]
     Disconnect(#[from] std::io::Error),
     #[error("Disconnected: {0}")]
-    Disconnected(ReturnCode),
+    Disconnected(ReturnCode, Option<u32>),
     #[error("Invalid fixed header")]
     InvalidFixedHeader,
     #[error("Invalid message type")]

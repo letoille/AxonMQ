@@ -2,7 +2,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use bytes::Bytes;
 
-use crate::mqtt::{QoS, protocol::property::PropertyUser};
+use crate::mqtt::{
+    QoS,
+    protocol::{property::PropertyUser, publish::PublishOptions},
+};
 
 #[derive(Clone)]
 pub struct RetainedMessage {
@@ -10,7 +13,7 @@ pub struct RetainedMessage {
     pub qos: QoS,
     pub payload: Bytes,
     pub user_properties: Vec<PropertyUser>,
-    pub expiry_at: Option<u64>,
+    pub options: PublishOptions,
 }
 
 #[derive(Default, Clone)]
@@ -38,7 +41,7 @@ impl RetainedTrie {
 
     pub fn insert(&mut self, topic: &str, message: RetainedMessage) {
         if let Some(old_msg) = self.get_message_mut(topic) {
-            let old_expiry = old_msg.expiry_at;
+            let old_expiry = old_msg.options.message_expiry_at;
             *old_msg = message;
             if let Some(old_expire) = old_expiry {
                 self.expiry_index.remove(&(old_expire, topic.to_string()));
@@ -51,7 +54,7 @@ impl RetainedTrie {
             current_node.message = Some(message);
         }
         let msg_ref = self.get_message(topic).unwrap();
-        if let Some(expire_at) = msg_ref.expiry_at {
+        if let Some(expire_at) = msg_ref.options.message_expiry_at {
             self.expiry_index.insert((expire_at, topic.to_string()));
         }
     }
@@ -77,7 +80,7 @@ impl RetainedTrie {
 
     pub fn remove(&mut self, topic: &str) {
         if let Some(msg) = self.get_message(topic) {
-            if let Some(expiry) = msg.expiry_at {
+            if let Some(expiry) = msg.options.message_expiry_at {
                 self.expiry_index.remove(&(expiry, topic.to_string()));
             }
         }
@@ -172,15 +175,15 @@ impl RetainedTrie {
 #[cfg(test)]
 mod tests {
     use super::{RetainedMessage, RetainedTrie};
-    use crate::mqtt::QoS;
+    use crate::mqtt::{QoS, protocol::publish::PublishOptions};
 
     fn msg(message: &'static str) -> RetainedMessage {
         RetainedMessage {
             qos: QoS::AtMostOnce,
             topic: "a/b/c".to_string(),
             payload: message.into(),
-            properties: vec![],
-            expiry_at: None,
+            user_properties: vec![],
+            options: PublishOptions::default(),
         }
     }
 

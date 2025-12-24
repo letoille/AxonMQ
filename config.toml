@@ -37,7 +37,7 @@ key_path = "certs/server.key"
 keep_alive = 60
 # maximum topic length in characters, must be between 1 and 65535
 max_topic_length = 256
-# session expiry interval in seconds, 0 means use client specified value, >0 means if client specified value is larger, override it, avoid unlimited session
+# session expiry interval in seconds, if client specified value is larger, override it, avoid unlimited session
 # default 7 days: 7 * 24 * 60 * 60 = 604800
 session_expiry_interval = 604800
 # maximum in-flight messages, must be between 1 and 65535, if client specified value is larger, override it

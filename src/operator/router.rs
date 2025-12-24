@@ -9,6 +9,7 @@ use tokio::task::JoinSet;
 use tracing::{trace, warn};
 use wasmtime::Engine;
 
+use crate::mqtt::protocol::publish::PublishOptions;
 use crate::processor::message::Message;
 use crate::service::sparkplug_b::helper::SparkPlugBApplicationHelper;
 use crate::{CONFIG, get_default_log_dir};
@@ -151,7 +152,7 @@ impl Router {
             loop {
                 tokio::select! {
                     Some(cmd) = command_rx.recv() => {
-                        if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, user_properties, expiry_at} = cmd {
+                        if let OperatorCommand::Publish{client_id, retain, qos, topic, payload, user_properties, options} = cmd {
                             if let Some(ref sparkplug_helper) = sparkplug_helper {
                                 if sparkplug_helper.is_sparkplug_b_topic(&topic) {
                                     sparkplug_helper.publish(
@@ -170,10 +171,9 @@ impl Router {
                                     topic.clone(),
                                     qos,
                                     retain,
-                                    expiry_at,
                                     payload.clone(),
                                     user_properties.clone(),
-                                );
+                                ).with_options(options);
 
                                 tokio::spawn( Self::chains_process(chains, msg, matcher_sender.clone()));
                             } else {
@@ -184,7 +184,7 @@ impl Router {
                                     topic,
                                     payload,
                                     user_properties,
-                                    expiry_at,
+                                    options,
                                 }).await.ok();
                             }
                         } else if let OperatorCommand::SparkPlugBPublish { client_id, topic, payload, retain, qos } = cmd {
@@ -195,7 +195,6 @@ impl Router {
                                     topic.clone(),
                                     qos,
                                     retain,
-                                    None,
                                     payload.clone(),
                                     vec![],
                                 );
@@ -209,7 +208,7 @@ impl Router {
                                     topic,
                                     payload,
                                     user_properties: vec![],
-                                    expiry_at: None,
+                                    options: PublishOptions::default(),
                                 }).await.ok();
                             }
                         } else {
@@ -347,7 +346,7 @@ impl Router {
                             topic: msg.topic,
                             payload: msg.payload,
                             user_properties: msg.user_properties,
-                            expiry_at: msg.expiry_at,
+                            options: msg.options,
                         })
                         .await
                         .ok();
