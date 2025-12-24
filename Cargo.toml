@@ -1,11 +1,20 @@
 [package]
 name = "axonmq"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 authors = ["le7.toille@gmail.com"]
 description = "A high-performance MQTT broker in Rust with native Sparkplug B support."
 license = "BUSL-1.1"
-keywords = ["mqtt", "broker", "mqtt-broker", "sparkplug", "sparkplug-b", "iot", "iiot", "rust"]
+keywords = [
+    "mqtt",
+    "broker",
+    "mqtt-broker",
+    "sparkplug",
+    "sparkplug-b",
+    "iot",
+    "iiot",
+    "rust",
+]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
