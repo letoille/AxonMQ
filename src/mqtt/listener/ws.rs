@@ -260,7 +260,7 @@ async fn handle_websocket_connection<S>(
                                     let mut write_buf = BytesMut::new();
                                     codec.encode(Message::ConnAck(ack), &mut write_buf).unwrap();
                                     ws_stream.send(WsMessage::Binary(write_buf.freeze())).await.ok();
-                                    debug!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.options.session_expiry_interval);
+                                    info!(parent: &span, "connected, version: {}, keep alive: {}, new start: {}, session expiry interval: {}", conn.version, keep_alive, conn.clean_start, conn.options.session_expiry_interval);
                                     return Ok(()); // Handshake successful
                                 }
                             }

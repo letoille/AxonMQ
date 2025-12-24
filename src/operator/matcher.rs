@@ -45,8 +45,12 @@ impl Subscriber {
         }
     }
 
-    pub fn filter(&self, client_id: &str) -> bool {
-        !(self.no_local && self.client_id == client_id)
+    pub fn filter_local(&self, client_id: &str) -> bool {
+        if self.no_local {
+            self.client_id != client_id
+        } else {
+            true
+        }
     }
 }
 
@@ -171,7 +175,7 @@ impl Matcher {
             } => {
                 let (clients_iters, group_clients_map) =
                     Self::find_clients(cache, trie, &client_id, &topic);
-                let clients_iters = &mut clients_iters.into_iter();
+                let clients_iters = &mut clients_iters.into_iter().peekable();
 
                 for (_group, mut clients) in group_clients_map.into_iter() {
                     let current_index = NEXT_INDEX.fetch_add(1, Ordering::Relaxed);
@@ -199,19 +203,37 @@ impl Matcher {
                         g_utils::TruncateDisplay::new(&client.client_id, 24),
                         g_utils::TruncateDisplay::new(&topic, 128),
                     );
-                    let _ = client.sink.deliver(
-                        Message::new(
-                            client.client_id.clone(),
-                            topic.clone(),
-                            qos.min(client.qos),
-                            retain,
-                            payload.clone(),
-                            user_properties.clone(),
-                        )
-                        .with_options(options.clone())
-                        .with_subscription_identifier(client.subscription_id),
-                        client.persist,
-                    );
+
+                    if clients_iters.peek().is_some() {
+                        let _ = client.sink.deliver(
+                            Message::new(
+                                client.client_id.clone(),
+                                topic.clone(),
+                                qos.min(client.qos),
+                                retain,
+                                payload.clone(),
+                                user_properties.clone(),
+                            )
+                            .with_options(options.clone())
+                            .with_subscription_identifier(client.subscription_id),
+                            client.persist,
+                        );
+                    } else {
+                        let _ = client.sink.deliver(
+                            Message::new(
+                                client.client_id.clone(),
+                                topic,
+                                qos.min(client.qos),
+                                retain,
+                                payload,
+                                user_properties,
+                            )
+                            .with_options(options)
+                            .with_subscription_identifier(client.subscription_id),
+                            client.persist,
+                        );
+                        break;
+                    }
                 }
             }
             RemoveClient { client_id } => {
@@ -250,7 +272,7 @@ impl Matcher {
 
         let clients = cache.get_mut(topic);
         if let Some(clients) = clients {
-            let clients = clients.iter_mut().filter(|c| c.filter(client_id));
+            let clients = clients.iter_mut().filter(|c| c.filter_local(client_id));
             let (clients_iters, shared_clients): (Vec<_>, Vec<_>) =
                 clients.partition(|c| c.share_group.is_none());
             let mut group_clients_map: HashMap<String, Vec<&mut Subscriber>> = HashMap::new();

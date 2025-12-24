@@ -255,9 +255,28 @@ impl Broker {
                             info!(parent: &span, "subscribe topic: {}, qos: {}", topic, options.qos);
                             let (group, actual_topic) =
                                 utils::parse_shared_subscription(&topic).unwrap_or(("", &topic));
+                            let msgs = if options.retain_handling == 0
+                                || (options.retain_handling == 1
+                                    && !client.subscribes.contains_key(&topic))
+                            {
+                                retain_trie.find_matches_for_filter(&topic)
+                            } else {
+                                vec![]
+                            };
+                            for msg in msgs {
+                                client
+                                    .client_helper
+                                    .send(ClientCommand::Publish {
+                                        retain: options.retain_as_published,
+                                        qos: options.qos.min(msg.qos),
+                                        topic: msg.topic.clone(),
+                                        payload: msg.payload.clone(),
+                                        user_properties: msg.user_properties.clone(),
+                                        options: msg.options.clone(),
+                                    })
+                                    .ok();
+                            }
                             if !client.subscribes.contains_key(&topic) {
-                                let msgs = retain_trie.find_matches_for_filter(&topic);
-
                                 let _ = operator_helper
                                     .subscribe(
                                         client_id.clone(),
@@ -278,19 +297,6 @@ impl Broker {
                                     )
                                     .await;
 
-                                for msg in msgs {
-                                    client
-                                        .client_helper
-                                        .send(ClientCommand::Publish {
-                                            retain: true,
-                                            qos: msg.qos,
-                                            topic: msg.topic.clone(),
-                                            payload: msg.payload.clone(),
-                                            user_properties: msg.user_properties.clone(),
-                                            options: msg.options.clone(),
-                                        })
-                                        .ok();
-                                }
                                 client.subscribes.insert(topic, options);
                             }
 
@@ -416,7 +422,7 @@ impl Broker {
                     let _ = operator_helper
                         .publish(
                             client_id,
-                            retain,
+                            false,
                             qos,
                             topic,
                             payload,

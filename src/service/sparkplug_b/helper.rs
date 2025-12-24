@@ -193,7 +193,7 @@ impl SparkPlugBApplicationHelper {
     pub fn is_sparkplug_b_topic(&self, topic: &str) -> bool {
         if topic.starts_with("spBv1.0/") {
             let parts: Vec<&str> = topic.split('/').collect();
-            if parts.len() != 3 && parts.len() != 4 && parts.len() != 5 {
+            if parts.len() < 3 || parts.len() > 5 {
                 return false;
             }
             if parts[2] == "NBIRTH"

@@ -167,12 +167,12 @@ impl Router {
                             let chains = Self::find_chain(&mut cache, &mut trie, &chains, &topic, &client_id);
                             if let Some(chains) = chains {
                                 let msg = Message::new(
-                                    client_id.clone(),
-                                    topic.clone(),
+                                    client_id,
+                                    topic,
                                     qos,
                                     retain,
-                                    payload.clone(),
-                                    user_properties.clone(),
+                                    payload,
+                                    user_properties,
                                 ).with_options(options);
 
                                 tokio::spawn( Self::chains_process(chains, msg, matcher_sender.clone()));
@@ -191,11 +191,11 @@ impl Router {
                             let chains = Self::find_chain(&mut cache, &mut trie, &chains, &topic, &client_id);
                             if let Some(chains) = chains {
                                 let msg = Message::new(
-                                    client_id.clone(),
-                                    topic.clone(),
+                                    client_id,
+                                    topic,
                                     qos,
                                     retain,
-                                    payload.clone(),
+                                    payload,
                                     vec![],
                                 );
 
@@ -298,41 +298,50 @@ impl Router {
     ) {
         let mut set = JoinSet::new();
 
-        for chain in chains {
-            let mut msg = message.clone();
-            set.spawn(async move {
-                for processor in chain.processors {
-                    trace!(
-                        "processing message with processor {} in chain {}",
-                        processor.processor.id(),
-                        chain.name
-                    );
-                    match processor.processor.on_message(msg).await {
-                        Ok(Some(m)) => {
-                            msg = m;
-                        }
-                        Ok(None) => {
-                            trace!(
-                                "processor {} in chain {} dropped the message",
-                                processor.processor.id(),
-                                chain.name
-                            );
-                            return None;
-                        }
-                        Err(e) => {
-                            trace!(
-                                "processor {} in chain {} failed to process message: {}",
-                                processor.processor.id(),
-                                chain.name,
-                                e
-                            );
-                            return None;
+        let mut chains_iter = chains.into_iter().peekable();
+        while let Some(chain) = chains_iter.next() {
+            let processor = |mut msg: Message| {
+                set.spawn(async move {
+                    for processor in chain.processors {
+                        trace!(
+                            "processing message with processor {} in chain {}",
+                            processor.processor.id(),
+                            chain.name
+                        );
+                        match processor.processor.on_message(msg).await {
+                            Ok(Some(m)) => {
+                                msg = m;
+                            }
+                            Ok(None) => {
+                                trace!(
+                                    "processor {} in chain {} dropped the message",
+                                    processor.processor.id(),
+                                    chain.name
+                                );
+                                return None;
+                            }
+                            Err(e) => {
+                                trace!(
+                                    "processor {} in chain {} failed to process message: {}",
+                                    processor.processor.id(),
+                                    chain.name,
+                                    e
+                                );
+                                return None;
+                            }
                         }
                     }
-                }
 
-                if chain.delivery { Some(msg) } else { None }
-            });
+                    if chain.delivery { Some(msg) } else { None }
+                })
+            };
+
+            if chains_iter.peek().is_none() {
+                processor(message);
+                break;
+            } else {
+                processor(message.clone());
+            }
         }
 
         while let Some(result) = set.join_next().await {

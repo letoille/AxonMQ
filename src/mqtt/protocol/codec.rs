@@ -1,6 +1,8 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
+use crate::CONFIG;
+
 use super::super::{MqttProtocolVersion, error::MqttProtocolError};
 use super::{
     fixed::{FixedHeaderCodec, FixedOptions},
@@ -18,7 +20,7 @@ impl Default for MessageCodec {
         MessageCodec {
             fixed_codec: FixedHeaderCodec::default(),
             version: MqttProtocolVersion::V3_1_1,
-            packet_maximum: 2 * 1024 * 1024, // 2MB
+            packet_maximum: CONFIG.get().unwrap().mqtt.settings.max_packet_size,
         }
     }
 }

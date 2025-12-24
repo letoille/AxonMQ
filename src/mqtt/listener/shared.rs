@@ -340,7 +340,7 @@ pub async fn handle_message(
                 operator_helper
                     .publish(
                         client_id.to_string(),
-                        publish.retain,
+                        false,
                         publish.qos,
                         publish.topic.clone(),
                         publish.payload,
@@ -384,7 +384,7 @@ pub async fn handle_message(
                 operator_helper
                     .publish(
                         client_id.to_string(),
-                        publish.retain,
+                        false,
                         publish.qos,
                         publish.topic.clone(),
                         publish.payload,
@@ -420,10 +420,23 @@ pub async fn handle_message(
                 },
             );
             if let Some(publish) = publish_msg {
+                if publish.retain {
+                    broker_helper
+                        .retain_message(
+                            publish.topic.clone(),
+                            publish.qos,
+                            publish.payload.clone(),
+                            publish.user_properties.clone(),
+                            publish.options.clone(),
+                        )
+                        .await
+                        .ok();
+                }
+
                 operator_helper
                     .publish(
                         client_id.to_string(),
-                        publish.retain,
+                        false,
                         publish.qos,
                         publish.topic,
                         publish.payload,

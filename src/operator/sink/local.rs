@@ -33,12 +33,16 @@ impl Sink for LocalClientSink {
         };
 
         if persist && message.qos != QoS::AtMostOnce {
-            if self.sender.try_send(msg.clone()).is_err() {
-                if let Err(e) = self.broker_helper.store_msg(&message.client_id, msg) {
-                    warn!(
-                        "failed to store message for client {}: {}",
-                        message.client_id, e
-                    );
+            let result = self.sender.try_send(msg);
+            match result {
+                Ok(_) => {}
+                Err(TrySendError::Full(msg)) | Err(TrySendError::Closed(msg)) => {
+                    if let Err(e) = self.broker_helper.store_msg(&message.client_id, msg) {
+                        warn!(
+                            "failed to store message for client {}: {}",
+                            message.client_id, e
+                        );
+                    }
                 }
             }
         } else {

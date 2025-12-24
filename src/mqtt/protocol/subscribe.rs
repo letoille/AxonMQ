@@ -157,6 +157,10 @@ impl Subscribe {
                 }
             };
 
+            if options.retain_handling > 2 {
+                return Err(MqttProtocolError::MalformedPayload);
+            }
+
             topics.push((topic, options));
         }
 

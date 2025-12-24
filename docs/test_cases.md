@@ -359,3 +359,44 @@ This document contains a series of test cases for verifying the core functionali
 *   **Setup**: Client A subscribes to topic `data/#` with `Subscription Identifier = 10`.
 *   **Action**: Client B publishes a message to `data/sensor1`.
 *   **Expected Result**: The `PUBLISH` packet received by Client A must contain a `Subscription Identifier` property with the value `10`.
+
+---
+
+## Part 13: Subscription Options
+
+**Objective**: To verify the Broker's handling of specific MQTTv5 subscription options like `Retain Handling` and `Retain as Published`.
+
+#### ✔️ **Case ID: SUB-OPT-13.1 (`Retain Handling = 0`)**
+*   **Description**: Verify that when `Retain Handling = 0`, the client receives retained messages on every subscription, even for existing ones.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.3.1.4 Retain Handling`.
+*   **Setup**: 1. A retained message exists for topic `T_RH`. 2. Client A connects, subscribes to `T_RH`, and receives the retained message. Client A remains connected.
+*   **Action**: Client A sends a second `SUBSCRIBE` packet for the same topic `T_RH` with `Retain Handling = 0`.
+*   **Expected Result**: Client A **will** receive the retained message again.
+
+#### ✔️ **Case ID: SUB-OPT-13.2 (`Retain Handling = 1`)**
+*   **Description**: Verify that when `Retain Handling = 1`, the client only receives retained messages for new subscriptions.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.3.1.4 Retain Handling`.
+*   **Setup**: (Same as above).
+*   **Action**: Client A sends a second `SUBSCRIBE` packet for the same topic `T_RH` with `Retain Handling = 1`.
+*   **Expected Result**: Client A **will not** receive the retained message again, as the subscription already exists.
+
+#### ✔️ **Case ID: SUB-OPT-13.3 (`Retain Handling = 2`)**
+*   **Description**: Verify that when `Retain Handling = 2`, the client does not receive any retained messages upon subscribing.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.3.1.4 Retain Handling`.
+*   **Setup**: A retained message exists for topic `T_RH`.
+*   **Action**: A new Client B connects and subscribes to `T_RH` with `Retain Handling = 2`.
+*   **Expected Result**: Client B **will not** receive the retained message.
+
+#### ✔️ **Case ID: SUB-OPT-13.4 (`Retain as Published = false`)**
+*   **Description**: Verify that when `Retain as Published = false` (default), the `RETAIN` flag on the received message is 0.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.3.1.5 Retain As Published`.
+*   **Setup**: A retained message exists for topic `T_RAP`.
+*   **Action**: Client A subscribes to `T_RAP` with the `Retain as Published` option set to `false`.
+*   **Expected Result**: The `PUBLISH` packet received by Client A must have its `RETAIN` flag set to `0`.
+
+#### ✔️ **Case ID: SUB-OPT-13.5 (`Retain as Published = true`)**
+*   **Description**: Verify that when `Retain as Published = true`, the `RETAIN` flag on the received message is 1.
+*   **MQTT v5.0 Spec Reference**: Section `3.8.3.1.5 Retain As Published`.
+*   **Setup**: A retained message exists for topic `T_RAP`.
+*   **Action**: Client A subscribes to `T_RAP` with the `Retain as Published` option set to `true`.
+*   **Expected Result**: The `PUBLISH` packet received by Client A must have its `RETAIN` flag set to `1`.
