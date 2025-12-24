@@ -72,7 +72,11 @@ fn main() -> Result<()> {
         .init();
 
     let config = CONFIG.get().unwrap();
-    info!("Hello, AxonMQ: {}!", config.node.id);
+    info!(
+        "Hello, AxonMQ v{}: {}!",
+        env!("CARGO_PKG_VERSION"),
+        config.node.id
+    );
 
     let runtime = if let Some(core_threads) = config.common.core_threads {
         Builder::new_multi_thread()
